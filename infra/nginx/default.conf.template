@@ -1,0 +1,41 @@
+# Rendered by envsubst at container start. ${BACKEND_HOST} is the only thing
+# that differs between `make up-node` and `make up-java` — the browser sees
+# one origin either way, so there is no CORS to configure and no client change.
+upstream backend {
+    server ${BACKEND_HOST}:${BACKEND_PORT};
+}
+
+upstream frontend {
+    server web:80;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # Which implementation answered is visible in GET /api/v1/health.
+    add_header X-Gateway-Backend "${BACKEND_HOST}" always;
+
+    client_max_body_size 8m;
+
+    location /api/ {
+        proxy_pass         http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Request-Id      $request_id;
+
+        # Checkout holds row locks while it reserves stock; do not cut it short.
+        proxy_read_timeout 30s;
+
+        # Problem responses are small and already final — never buffer or rewrite.
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass       http://frontend;
+        proxy_set_header Host $host;
+    }
+}

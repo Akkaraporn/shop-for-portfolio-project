@@ -1,0 +1,139 @@
+# ---------------------------------------------------------------------------
+# The whole stack. Backends live behind compose profiles so exactly one of
+# them is ever running, and the gateway makes the swap invisible to the web app.
+#
+#   make up-node   ->  gateway -> api-node   (profile: node)
+#   make up-java   ->  gateway -> api-java   (profile: java)
+#
+# Both profiles share the same Postgres, the same Flyway migrations and the
+# same Redis. That shared state is what makes cross-backend parity testable.
+# ---------------------------------------------------------------------------
+name: vibecode-shop
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Owns the schema. Runs once, exits, and both backends wait for that exit.
+  # Neither Prisma migrate nor ddl-auto is ever allowed to touch the schema.
+  flyway:
+    image: flyway/flyway:10-alpine
+    restart: "no"
+    command: -connectRetries=30 migrate
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      FLYWAY_USER: ${POSTGRES_USER}
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
+    volumes:
+      - ../migrations:/flyway/sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # --- backends: exactly one profile at a time ----------------------------
+
+  api-node:
+    profiles: ["node"]
+    build:
+      context: ../apps/api-node
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      PAYMENT_MOCK_DELAY_MS: ${PAYMENT_MOCK_DELAY_MS:-2000}
+      CURRENCY: ${CURRENCY:-THB}
+      SHIPPING_FLAT_CENTS: ${SHIPPING_FLAT_CENTS:-5000}
+      RESERVATION_TTL_MINUTES: ${RESERVATION_TTL_MINUTES:-15}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      # The one line that makes "backend booted on a stale schema" impossible.
+      flyway:   { condition: service_completed_successfully }
+
+  api-java:
+    profiles: ["java"]
+    build:
+      context: ../apps/api-java
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      # validate, never update. Flyway owns the schema.
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_DATA_REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      PAYMENT_MOCK_DELAY_MS: ${PAYMENT_MOCK_DELAY_MS:-2000}
+      CURRENCY: ${CURRENCY:-THB}
+      SHIPPING_FLAT_CENTS: ${SHIPPING_FLAT_CENTS:-5000}
+      RESERVATION_TTL_MINUTES: ${RESERVATION_TTL_MINUTES:-15}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      flyway:   { condition: service_completed_successfully }
+
+  # --- frontend + gateway -------------------------------------------------
+
+  web:
+    build:
+      context: ../apps/web
+    restart: unless-stopped
+
+  # nginx:alpine runs envsubst over /etc/nginx/templates/*.template on boot,
+  # so BACKEND_HOST is all that changes between the two profiles.
+  gateway:
+    image: nginx:alpine
+    restart: unless-stopped
+    environment:
+      BACKEND_HOST: ${BACKEND_HOST:-api-node}
+      BACKEND_PORT: ${BACKEND_PORT:-3000}
+    ports:
+      - "${GATEWAY_PORT:-8080}:80"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  pgdata:

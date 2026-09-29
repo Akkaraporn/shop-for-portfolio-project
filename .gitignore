@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# build output
+dist/
+build/
+target/
+*.tsbuildinfo
+
+# generated from the contract — never hand-edit, never commit
+apps/web/src/api/schema.d.ts
+
+# test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# env
+.env
+.env.*
+!.env.example
+
+# java
+.gradle/
+.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# editors / os
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*

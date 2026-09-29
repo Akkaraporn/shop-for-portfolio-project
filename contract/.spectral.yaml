@@ -1,0 +1,119 @@
+# ---------------------------------------------------------------------------
+# The contract's guard rails. Every rule here exists because breaking it is a
+# known way to make the two implementations diverge in a way no test notices
+# until the frontend breaks. `make lint-contract` must be clean before any
+# codegen, any backend code, and every commit.
+# ---------------------------------------------------------------------------
+extends: ["spectral:oas"]
+
+rules:
+  # --- house style: the spec is documentation, not just a schema ------------
+
+  # A summary tells you the name of the operation. A description tells you what
+  # it returns in the cases you did not think of. Phase 5 reads this file, not
+  # the TypeScript.
+  operation-description-required:
+    description: Every operation needs a description, not just a summary.
+    message: "{{path}} has no description — say what it returns and when it fails."
+    severity: error
+    given: "$.paths[*][get,put,post,patch,delete]"
+    then:
+      field: description
+      function: truthy
+
+  schema-description-required:
+    description: Every named schema needs a description.
+    message: "Schema {{property}} has no description."
+    severity: warn
+    given: "$.components.schemas[*]"
+    then:
+      field: description
+      function: truthy
+
+  # --- money ----------------------------------------------------------------
+
+  # Jackson serialises BigDecimal("129.50") as 129.50; Prisma serialises Decimal
+  # as the string "129.5". Same database row, two different JSON values, and
+  # nothing catches it until a client does arithmetic. Integers have one
+  # representation in both languages.
+  money-fields-are-integer-cents:
+    description: A field ending in `Cents` must be an integer.
+    message: "{{path}} ends in Cents but is not an integer."
+    severity: error
+    given: "$..properties[?(@property.match(/Cents$/))]"
+    then:
+      field: type
+      function: pattern
+      functionOptions:
+        match: "^integer$"
+
+  no-decimal-money-fields:
+    description: Money must be named `...Cents`, never a bare price/amount/total/fee.
+    message: "{{path}} looks like money but is not named `...Cents` — rename it."
+    severity: error
+    given: "$..properties[?(@property.match(/([Pp]rice|[Aa]mount|[Tt]otal|[Ff]ee|[Ss]ubtotal)$/))]"
+    then:
+      function: undefined
+
+  # --- error shape ----------------------------------------------------------
+
+  # One error shape, everywhere. The moment a second one exists, every client
+  # needs two code paths and the parity suite has to know which to expect.
+  problem-json-on-errors:
+    description: Every 4xx/5xx response must be application/problem+json.
+    message: "{{path}} must return application/problem+json (RFC 9457)."
+    severity: error
+    given: "$.paths[*][*].responses[?(@property.match(/^[45]/))]"
+    then:
+      field: content.application/problem+json
+      function: truthy
+
+  no-json-on-errors:
+    description: Error responses must not also offer application/json.
+    message: "{{path}} offers application/json for an error — problem+json only."
+    severity: error
+    given: "$.paths[*][*].responses[?(@property.match(/^[45]/))].content"
+    then:
+      field: application/json
+      function: undefined
+
+  # --- list shape -----------------------------------------------------------
+
+  # A bare array has nowhere to put the cursor, so the first time a list needs
+  # pagination the response shape changes and every client breaks. The envelope
+  # goes on from day one, even for lists that will never have a second page.
+  no-bare-array-responses:
+    description: A 200 response must not be a bare array — use the Page envelope.
+    message: "{{path}} returns a bare array; wrap it in the Page envelope."
+    severity: error
+    given: "$.paths[*][*].responses[?(@property.match(/^2/))].content[*].schema"
+    then:
+      field: type
+      function: pattern
+      functionOptions:
+        notMatch: "^array$"
+
+  # --- enums ----------------------------------------------------------------
+
+  # An inline enum cannot be referenced, so the two implementations each grow
+  # their own copy and drift. A named schema is the only shared definition.
+  no-inline-enums:
+    description: Enums belong in components/schemas, not inline in a path.
+    message: "{{path}} declares an inline enum — move it to components/schemas."
+    severity: error
+    # Against the unresolved document: with $refs inlined, every enum reached
+    # through a $ref would look inline and every named enum would be an error.
+    resolved: false
+    given: "$.paths[*][*]..[?(@.enum)]"
+    then:
+      function: undefined
+
+  enum-values-are-snake-case:
+    description: Enum values are lowercase snake_case strings.
+    message: "{{value}} is not lowercase snake_case."
+    severity: error
+    given: "$.components.schemas[*].enum[*]"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][a-z0-9_-]*$"

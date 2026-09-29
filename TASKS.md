@@ -1,0 +1,152 @@
+# TASKS
+
+The plan, mirrored from ClickUp. The board is the live copy — it holds the full
+per-task detail (checklists, gotchas, code sketches, definitions of done). This
+file is the map: what the phases are, what each task is for, and what has to be
+true before it can be called done.
+
+**Board:** [Portfolio Project](https://app.clickup.com/90182767626/v/o/s/1100450000000236)
+
+> When a task's detail changes, it changes in ClickUp first. When
+> `contract/openapi.yaml` changes, the affected ClickUp tasks get updated too —
+> the spec and the plan drift apart silently otherwise.
+
+## What this project is
+
+One web store API, defined once in OpenAPI and implemented twice — NestJS and
+Spring Boot — against a single PostgreSQL schema owned by Flyway. One contract
+test suite runs against both and proves they are interchangeable: `make up-node`
+and `make up-java` serve the same store through the same gateway, and the swap
+is invisible to the browser.
+
+The interesting parts are the ones OpenAPI cannot describe — the cursor codec
+and the canonical request hash used for idempotency — because those are exactly
+where two independent implementations drift. See `docs/cursor-format.md` and
+`docs/idempotency.md` once Phase 2 writes them.
+
+## Phase 1 — Contract & Foundation
+
+Everything here is cheap now and expensive later. A day spent closing the
+contract saves three in Phase 5, because every spec change after code exists is
+a change in two languages plus the tests.
+
+| # | Task | Priority | Est. | Done when |
+| --- | --- | --- | --- | --- |
+| 1.1 | [Repo scaffold + Makefile + ADR template](https://app.clickup.com/t/z8v9xnfz55) | High | 4h | `git clone` shows where everything lives, before any code exists |
+| 1.2 | [Close the OpenAPI contract + Spectral lint](https://app.clickup.com/t/z8v9xnfz56) | Urgent | 7h | `make lint-contract` is clean and no endpoint's behaviour has to be guessed |
+| 1.3 | [Flyway V1 migration + V2 seed](https://app.clickup.com/t/z8v9xnfz58) | Urgent | 7h | `make clean && make up-node` gives a demo-ready database, three times running |
+| 1.4 | [Compose: Postgres + Redis + Flyway + nginx gateway](https://app.clickup.com/t/z8v9xnfz5a) | High | 5h | `docker compose ps` all healthy; the gateway swap works from env alone |
+| 1.5 | [ADR-001 … ADR-003](https://app.clickup.com/t/z8v9xnfz5b) | Normal | 2h | Three ADRs in `docs/adr/`, one page each, Alternatives section non-empty |
+
+Three questions 1.2 has to settle before anything else starts:
+
+1. **What does `sort=price_asc` sort by?** If it is the product's cheapest
+   variant, `products` needs a denormalised `min_price_cents` — a subquery will
+   not use an index — which means going back into `V1__init.sql`.
+2. **How is shipping calculated?** Flat rate for now, said out loud in the
+   README, rather than a shipping-zone table nobody asked for.
+3. **How many currencies?** THB only, with a `currency` field present to show
+   the seam was considered.
+
+## Phase 2 — NestJS Backend
+
+The reference implementation. Whatever it does becomes what Phase 5 has to
+match, so the parts the contract cannot express get written down as they are
+built — not reverse-engineered from TypeScript two phases later.
+
+| # | Task | Priority | Est. | Done when |
+| --- | --- | --- | --- | --- |
+| 2.1 | [Foundation: Prisma, Problem filter, logging, health, cursor codec](https://app.clickup.com/t/z8v9xnfz5d) | Urgent | 16h | Any error at all comes back as `problem+json`; no HTML error page can escape |
+| 2.2 | [Auth: register, login, JWT guard, refresh rotation](https://app.clickup.com/t/z8v9xnfz5g) | High | 13h | Reusing a rotated refresh token revokes the whole token family |
+| 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
+| 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
+| 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
+| 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) | High | 15h | Same webhook delivered five times decrements stock once |
+| 2.7 | [Admin: products, inventory delta, order status machine](https://app.clickup.com/t/z8v9xnfz5w) | Normal | 9h | `delta: -999` → 409; customer token → 403 |
+| 2.8 | [Dockerize + unit tests for the hard parts](https://app.clickup.com/t/z8v9xnfz5x) | High | 9h | `make clean && make up-node` from a clean tree serves every endpoint |
+
+**2.5 is the task the whole project exists for.** It is the one that gets asked
+about, and the one that makes this not a CRUD tutorial. Two rules from it bind
+Phase 5 exactly:
+
+- **Lock variants in ascending UUID order.** Two carts sharing items in
+  opposite orders deadlock otherwise — A locks X waits for Y, B locks Y waits
+  for X. Sorting first means the loser just waits.
+- **Canonical hash**: parse the body, sort keys recursively, serialise with no
+  whitespace, SHA-256, lowercase hex. The same body with keys in a different
+  order must hash identically in both languages.
+
+Also non-negotiable: a 409 for insufficient stock lists **every** short line in
+one response, not just the first. And `POST /payments/{id}/confirm` marks the
+payment `processing` and nothing more — stock is decremented by the webhook, the
+way a real provider works. Collapsing that asymmetry means the webhook path
+never gets tested.
+
+## Phase 3 — React Frontend
+
+| # | Task | Priority | Est. | Done when |
+| --- | --- | --- | --- | --- |
+| 3.0 | 🎨 [Design foundation: tokens, Thai font, component library, wireframes](https://app.clickup.com/t/z8v9xnfz7v) | High | 12h | Tokens in `tailwind.config.ts`, shadcn themed, four wireframes, Thai vowels not clipped |
+| 3.1 | [Scaffold + generated API client + query layer](https://app.clickup.com/t/z8v9xnfz61) | High | 8h | Change a field in `openapi.yaml` → `make gen-client` → `tsc` points at every use |
+| 3.2 | [Auth store, refresh interceptor, guest cart token](https://app.clickup.com/t/z8v9xnfz63) | High | — | — |
+| 3.3 | [Catalog, product detail, cart pages](https://app.clickup.com/t/z8v9xnfz67) | High | — | — |
+| 3.4 | ⭐ [Checkout flow: form, idempotency key, payment, confirmation](https://app.clickup.com/t/z8v9xnfz69) | Urgent | — | — |
+| 3.5 | [Admin UI + error handling + dockerize web](https://app.clickup.com/t/z8v9xnfz6a) | Normal | — | — |
+
+3.0 runs **before** 3.3. Two reasons it is a task and not an afterthought:
+someone opening the demo link judges it in five seconds from the picture, and
+without tokens fixed up front every page drifts a little from the last one.
+
+The iron rule from 3.1: **never hand-write an API type.** Import from
+`@/api/schema`. A hand-written interface throws away the entire benefit of
+working contract-first — the build stops being able to catch a backend that has
+drifted.
+
+## Phase 4 — Contract Tests & CI
+
+One suite, two backends, and a report that says whether they agree.
+
+| # | Task | Priority | Done when |
+| --- | --- | --- | --- |
+| 4.1 | [Test harness + Schemathesis property testing](https://app.clickup.com/t/z8v9xnfz6b) | Urgent | — |
+| 4.2 | [Scenario tests: auth flow, cart merge, happy path](https://app.clickup.com/t/z8v9xnfz6e) | High | — |
+| 4.3 | ⭐ [Concurrency, idempotency & cross-backend tests](https://app.clickup.com/t/z8v9xnfz6j) | Urgent | — |
+| 4.4 | [GitHub Actions matrix + parity report generator](https://app.clickup.com/t/z8v9xnfz6p) | High | — |
+
+4.3 is where the shared database pays off: a cursor issued by Node has to page
+correctly against Java, and a checkout retried with the same `Idempotency-Key`
+against the *other* backend has to replay rather than double-charge. That is
+only possible because the idempotency keys and the cart live in Postgres, not
+in per-process memory or Redis.
+
+## Phase 5 — Spring Boot Port
+
+| # | Task | Priority | Done when |
+| --- | --- | --- | --- |
+| 5.1 | [Scaffold Spring Boot + JPA entities + ddl-auto validate](https://app.clickup.com/t/z8v9xnfz6r) | High | — |
+| 5.2 | [Serialization & error parity: Jackson, Problem, validation](https://app.clickup.com/t/z8v9xnfz6v) | Urgent | — |
+| 5.3 | [Port the shared codecs: cursor + canonical hashing](https://app.clickup.com/t/z8v9xnfz6z) | Urgent | — |
+| 5.4 | [Port the modules: auth, catalog, cart, orders, payments, admin](https://app.clickup.com/t/z8v9xnfz70) | High | — |
+| 5.5 | ⭐ [Port checkout + get CI green on both](https://app.clickup.com/t/z8v9xnfz72) | Urgent | — |
+
+`ddl-auto: validate`, never `update`. Flyway owns the schema; JPA and Prisma are
+both readers. The moment either one is allowed to write, the other drifts.
+
+## Phase 6 — Ship & Present
+
+| # | Task | Priority | Done when |
+| --- | --- | --- | --- |
+| 6.1 | [README + remaining ADRs + Postman collection](https://app.clickup.com/t/z8v9xnfz79) | Urgent | — |
+| 6.2 | [Demo GIF of the backend swap + make the seed look like a real shop](https://app.clickup.com/t/z8v9xnfz7b) | High | — |
+| 6.3 | [Deploy the demo + update CV and GitHub profile](https://app.clickup.com/t/z8v9xnfz7c) | High | — |
+
+## Reference
+
+[📚 Project Documentation & Reference Hub](https://app.clickup.com/t/z8v9xnfz54) —
+the cross-implementation rules, the schema decisions and their reasons, the ADR
+register, and the two algorithms the contract cannot express. Kept open for the
+whole project; new findings go there. The rules that matter most day to day are
+copied into `CLAUDE.md` so they are in front of whoever is writing code.
+
+Task 2.7 (admin) is the first thing to cut if time runs short. Anything cut gets
+written up in ADR-007 rather than quietly dropped.

@@ -1,0 +1,257 @@
+# ---------------------------------------------------------------------------
+# SINGLE SOURCE OF TRUTH. Both backends implement this; the frontend's types
+# are generated from it. Nothing here is negotiable at implementation time —
+# if reality disagrees with this file, this file gets fixed first.
+#
+# STATUS: skeleton. The conventions, the Problem/Page envelopes and the health
+# endpoints are settled. The 25 paths / 27 schemas of the real contract are
+# still to be written — that is ClickUp task 1.2, and no backend or client
+# code should be written before it is done and `make lint-contract` is clean.
+# ---------------------------------------------------------------------------
+openapi: 3.1.0
+
+info:
+  title: VibeCode Store API
+  version: 1.0.0
+  description: |
+    A web store API defined once and implemented twice — NestJS and Spring Boot —
+    against one shared PostgreSQL schema, so that a single contract test suite
+    can prove the two implementations are interchangeable.
+
+    Conventions that apply to every operation in this file:
+
+    1. Money is an integer count of the currency's minor unit. Field names end
+       in `Cents`. Never a float, never a decimal string.
+    2. Timestamps are RFC 3339 UTC with millisecond precision and a `Z` suffix:
+       `2026-03-14T08:21:05.123Z`.
+    3. Public identifiers are lowercase hyphenated UUID strings.
+    4. Every error response is `application/problem+json` (RFC 9457). There is
+       no second error shape.
+    5. Enums are lowercase snake_case strings, never integers.
+    6. Unrecognised query parameters are ignored, not rejected.
+    7. An absent optional field is omitted from the body, not sent as `null`
+       (unless the schema declares it nullable).
+    8. Every list operation returns the `Page` envelope, even for one item.
+  contact:
+    name: Akkaraporn Lertpiputsakul
+    email: ahar0007@gmail.com
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local gateway (proxies to whichever backend profile is up)
+
+tags:
+  - name: meta
+    description: Health and readiness probes.
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [meta]
+      summary: Liveness probe
+      description: >
+        Reports that the process is up without touching any dependency. Also
+        reports which implementation answered, which is how the backend swap is
+        demonstrated: the same request returns `nestjs` or `spring-boot`
+        depending only on which compose profile is running.
+      responses:
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /ready:
+    get:
+      operationId: getReadiness
+      tags: [meta]
+      summary: Readiness probe
+      description: >
+        Checks the dependencies this process needs in order to serve traffic.
+        Postgres is required. Redis is reported but not required — losing Redis
+        entirely must degrade performance, never correctness.
+      responses:
+        "200":
+          description: Ready to serve traffic.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: A required dependency is unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from `POST /auth/login`. Valid for 15 minutes.
+
+  schemas:
+    Implementation:
+      type: string
+      description: Which backend implementation served the request.
+      enum: [nestjs, spring-boot]
+
+    HealthStatus:
+      type: string
+      description: Coarse health verdict for the process or one dependency.
+      enum: [ok, degraded, down]
+
+    Health:
+      type: object
+      description: Liveness payload. Touches no dependency.
+      required: [status, implementation, version]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        implementation:
+          $ref: "#/components/schemas/Implementation"
+        version:
+          type: string
+          description: Build version of the running process.
+          examples: ["1.0.0"]
+
+    Readiness:
+      type: object
+      description: Readiness payload, one entry per checked dependency.
+      required: [status, implementation, checks]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        implementation:
+          $ref: "#/components/schemas/Implementation"
+        checks:
+          type: object
+          description: Per-dependency verdicts. Only `database` gates readiness.
+          required: [database, cache]
+          properties:
+            database:
+              $ref: "#/components/schemas/HealthStatus"
+            cache:
+              $ref: "#/components/schemas/HealthStatus"
+
+    Page:
+      type: object
+      description: >
+        Cursor-paginated envelope returned by every list operation. `nextCursor`
+        is an opaque token — clients must pass it back verbatim and must never
+        parse it. It is omitted when there is no further page.
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          description: The page of results.
+          items: {}
+        hasMore:
+          type: boolean
+          description: Whether a further page exists.
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page. Omitted on the last page.
+
+    FieldError:
+      type: object
+      description: One field-level problem, used by validation and stock errors.
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: Path to the offending field, e.g. `items[0].quantity`.
+        message:
+          type: string
+          description: Human-readable explanation of what is wrong with this field.
+
+    Problem:
+      type: object
+      description: >
+        RFC 9457 problem details, and the only error shape this API emits.
+        `traceId` is always present and always matches the request's log lines.
+        `errors` carries field-level detail when the failure is per-field.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Stable URI identifying the problem kind. Clients switch on this.
+          examples: ["https://errors.example.com/insufficient-stock"]
+        title:
+          type: string
+          description: Short, human-readable summary of the problem kind.
+        status:
+          type: integer
+          description: HTTP status code, repeated here per RFC 9457.
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+          description: Explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference identifying this occurrence.
+        traceId:
+          type: string
+          description: Correlates this response with the server logs.
+        errors:
+          type: array
+          description: Field-level detail. Present for validation and stock failures.
+          items:
+            $ref: "#/components/schemas/FieldError"
+
+  responses:
+    BadRequest:
+      description: The request was malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Authenticated, but not allowed to do this.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: No such resource.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: The request conflicts with the current state of the resource.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: Well-formed but semantically invalid; see `errors`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalError:
+      description: Unexpected server error. Never leaks a stack trace.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
