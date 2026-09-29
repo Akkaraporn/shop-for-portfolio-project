@@ -85,7 +85,12 @@ And the purchase completes: order history, cancellation that returns stock, and 
 mock provider that posts a real signed webhook back — the only thing in the system
 that decrements stock.
 
-298 tests — 162 that need nothing, and 136 that run against a live PostgreSQL 16
+Phase 3 has begun with the design foundation: self-hosted Thai/Latin type with
+line-heights that do not clip tone marks, a deliberately small palette whose contrast
+is asserted arithmetically rather than eyeballed, shadcn components, and the
+loading/empty/error states most portfolios skip.
+
+331 tests — 195 that need nothing, and 136 that run against a live PostgreSQL 16
 because what they check (the recursive category CTE, keyset pagination, trigram
 search, row locking under real concurrency) is database behaviour a test double could
 not prove.

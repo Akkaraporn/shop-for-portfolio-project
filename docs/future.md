@@ -16,7 +16,9 @@ to revisit it. An entry here is evidence of a decision, not a backlog.
 | Multi-currency | Every price is integer minor units in one currency. `currency` exists on the response to show the seam. | A second currency was actually required. |
 | Coupons / promotions | An entire pricing engine, no new architectural idea. | The checkout story needed discount logic. |
 | MinIO + presigned uploads | Seed images are `picsum.photos` URLs seeded per slug — always resolve, cost nothing, never 404. | Admin product creation needed genuine image upload. Curating real product photography is task 6.2, and does not need object storage. |
-| Dark mode | Doubles the work on every component for something no interviewer asks about. shadcn's CSS variables leave the door open, so this is "not now", not "can't". | There was time left after Phase 6. |
+| Dark mode | Decided in task 3.0: it doubles the work on every component in exchange for something no interviewer has ever asked about. Everything is already a CSS variable, so a dark theme is a second block of values rather than a rewrite — "not now", not "cannot". The `next-themes` dependency shadcn pulled in for it was removed. | There was time left after Phase 6. |
+| Tablet-specific layout | Two breakpoints only: mobile `<640` and desktop `>=1024`. A tablet layout is a third set of decisions to make and maintain for a width the mobile layout already serves well with more room. | A tablet-heavy audience showed up in analytics that do not exist yet. |
+| A full a11y programme | Four things are done and asserted: visible focus, AA contrast (computed from the tokens in a test, not eyeballed), real `alt` text, and no keyboard traps. Screen-reader walkthroughs, skip links and full ARIA authoring are not. | The shop had real users, or an audit was required. |
 
 ## Parked notes
 

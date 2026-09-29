@@ -1,0 +1,240 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+ * Self-hosted, not a Google Fonts <link>.
+ *
+ * IBM Plex Sans Thai ships Thai and Latin in one family, which is the whole
+ * requirement: a Latin fallback font would render Thai at a different size and
+ * weight, and the seam shows on every product card. Self-hosting also means the
+ * shop renders identically offline and inside Docker, with no third-party request
+ * on the critical path.
+ * ------------------------------------------------------------------------- */
+@import '@fontsource/ibm-plex-sans-thai/400.css';
+@import '@fontsource/ibm-plex-sans-thai/500.css';
+@import '@fontsource/ibm-plex-sans-thai/600.css';
+
+/* ---------------------------------------------------------------------------
+ * Design tokens.
+ *
+ * Tailwind v4 is CSS-first: tokens are declared here in `@theme`, not in a
+ * `tailwind.config.ts`. The task was written when v3 was current and names that
+ * file, but the intent — every token defined in one place rather than scattered
+ * across class attributes — is what v4's `@theme` is for, and it generates the
+ * utilities and the CSS variables from one declaration.
+ * ------------------------------------------------------------------------- */
+@theme {
+  /* --- type ---------------------------------------------------------------
+   * One family. The fallbacks are for the moment before the woff2 lands, and
+   * every one of them has Thai coverage on its platform.
+   */
+  --font-sans:
+    'IBM Plex Sans Thai', 'Noto Sans Thai', 'Leelawadee UI', 'Thonburi',
+    system-ui, sans-serif;
+
+  /* Every size ships with a line-height that leaves room for Thai.
+   *
+   * This is the failure the whole font section of the task is about: Thai stacks
+   * an upper vowel and a tone mark above the base character and can hang a lower
+   * vowel below it, so a line box sized for Latin clips them. Tailwind's own
+   * defaults pair the smaller sizes with tight leading, which is why the sizes are
+   * redeclared here rather than inherited.
+   *
+   * Body copy is 1.6. Headings never go below 1.35.
+   */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.6;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.6;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.55;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.5;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.4;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 1.35;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 1.35;
+
+  /* --- colour -------------------------------------------------------------
+   * One neutral ramp, one accent, three semantics. Nothing else.
+   *
+   * A project looks unfinished because it uses too many colours, not too few. The
+   * accent appears on primary buttons and links and nowhere else; everything
+   * structural is neutral.
+   *
+   * The neutrals are very slightly warm (a touch of yellow in the hue) so large
+   * areas of grey do not read as blue-cold next to the product photography.
+   */
+  --color-neutral-50: oklch(0.985 0.002 90);
+  --color-neutral-100: oklch(0.967 0.003 90);
+  --color-neutral-200: oklch(0.925 0.004 90);
+  --color-neutral-300: oklch(0.87 0.005 90);
+  --color-neutral-400: oklch(0.708 0.006 90);
+  --color-neutral-500: oklch(0.556 0.006 90);
+  --color-neutral-600: oklch(0.44 0.006 90);
+  --color-neutral-700: oklch(0.37 0.005 90);
+  --color-neutral-800: oklch(0.269 0.004 90);
+  --color-neutral-900: oklch(0.205 0.003 90);
+  --color-neutral-950: oklch(0.145 0.002 90);
+
+  /* A deep green. Reads as considered rather than default-blue, and holds white
+   * text at AA on the 600 step, which is the one buttons use.
+   *
+   * Named `brand`, not `accent`: shadcn reserves `accent` for the subtle background
+   * a control takes on hover, and one name meaning two things is how a design system
+   * starts lying to whoever reads it next. */
+  --color-brand-50: oklch(0.97 0.02 155);
+  --color-brand-100: oklch(0.94 0.04 155);
+  --color-brand-200: oklch(0.88 0.07 155);
+  --color-brand-300: oklch(0.8 0.1 155);
+  --color-brand-400: oklch(0.7 0.12 155);
+  --color-brand-500: oklch(0.6 0.13 155);
+  --color-brand-600: oklch(0.51 0.12 155);
+  --color-brand-700: oklch(0.43 0.1 155);
+  --color-brand-800: oklch(0.36 0.08 155);
+  --color-brand-900: oklch(0.3 0.06 155);
+
+  --color-success: oklch(0.52 0.13 150);
+  --color-success-bg: oklch(0.95 0.03 150);
+  --color-warning: oklch(0.55 0.12 75);
+  --color-warning-bg: oklch(0.96 0.04 85);
+  --color-danger: oklch(0.52 0.18 27);
+  --color-danger-bg: oklch(0.96 0.03 27);
+
+  /* --- radius -------------------------------------------------------------
+   * Two values. One for controls, one for surfaces. A third would only ever be
+   * chosen by whoever was typing at the time.
+   */
+  --radius-control: 0.375rem; /* 6px  — buttons, inputs, badges */
+  --radius-surface: 0.75rem; /* 12px — cards, sheets, dialogs */
+
+  /* --- elevation ----------------------------------------------------------
+   * Two levels: resting and lifted. Deliberately soft — a shop wants separation,
+   * not drama.
+   */
+  --shadow-resting: 0 1px 2px 0 oklch(0.145 0.002 90 / 0.06);
+  --shadow-lifted:
+    0 4px 6px -1px oklch(0.145 0.002 90 / 0.08),
+    0 2px 4px -2px oklch(0.145 0.002 90 / 0.06);
+}
+
+/* ---------------------------------------------------------------------------
+ * The shadcn contract.
+ *
+ * shadcn's components are written against a fixed set of semantic token names.
+ * Mapping them onto the ramp above — rather than rewriting every component to use
+ * our names — keeps the components exactly as the registry ships them, so a later
+ * `shadcn add` or upgrade does not have to be re-edited by hand.
+ *
+ * This block is the single place where "what the design system calls things" meets
+ * "what shadcn calls things".
+ * ------------------------------------------------------------------------- */
+@theme {
+  --color-background: var(--color-neutral-50);
+  --color-foreground: var(--color-neutral-900);
+
+  --color-card: var(--color-white);
+  --color-card-foreground: var(--color-neutral-900);
+  --color-popover: var(--color-white);
+  --color-popover-foreground: var(--color-neutral-900);
+
+  /* The one place the brand colour appears: primary actions and links. */
+  --color-primary: var(--color-brand-600);
+  --color-primary-foreground: var(--color-white);
+
+  --color-secondary: var(--color-neutral-100);
+  --color-secondary-foreground: var(--color-neutral-900);
+
+  --color-muted: var(--color-neutral-100);
+  --color-muted-foreground: var(--color-neutral-600);
+
+  /* shadcn's `accent` is the hover surface, not the brand colour. */
+  --color-accent: var(--color-neutral-100);
+  --color-accent-foreground: var(--color-neutral-900);
+
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: var(--color-white);
+
+  --color-border: var(--color-neutral-200);
+  --color-input: var(--color-neutral-300);
+  --color-ring: var(--color-brand-600);
+
+  /* Two radii, expressed through the four names shadcn's components reach for.
+   * `sm` and `md` are controls; `lg` and `xl` are surfaces. Collapsing them this way
+   * is what keeps the shop from having five different corner treatments. */
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-surface);
+  --radius-xl: var(--radius-surface);
+}
+
+/* ---------------------------------------------------------------------------
+ * The spacing scale is Tailwind's own, but only six steps of it are used:
+ *
+ *     2 (0.5rem)  3 (0.75rem)  4 (1rem)  6 (1.5rem)  8 (2rem)  12 (3rem)
+ *
+ * Not enforced by the build — it is a habit, and the point of writing it down is
+ * that a page assembled from six spacings looks composed, while one assembled from
+ * whatever felt right looks almost-aligned everywhere.
+ * ------------------------------------------------------------------------- */
+
+@layer base {
+  :root {
+    /* Semantic aliases. Components reference these rather than a ramp step, so a
+     * palette change is one edit here instead of a search across every component.
+     *
+     * Prefixed `--fg-`, not `--text-`: Tailwind owns the `--text-*` namespace for
+     * font sizes, and a colour living there reads as a size to anyone skimming. */
+    --surface: var(--color-white);
+    --surface-sunken: var(--color-neutral-50);
+    --surface-raised: var(--color-white);
+    --border-subtle: var(--color-neutral-200);
+    --border-strong: var(--color-neutral-300);
+    --fg-primary: var(--color-neutral-900);
+    --fg-secondary: var(--color-neutral-600);
+    --fg-muted: var(--color-neutral-500);
+    --fg-on-brand: var(--color-white);
+  }
+
+  html {
+    /* Thai needs the room. See the note on the type scale above. */
+    line-height: 1.6;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--surface-sunken);
+    color: var(--fg-primary);
+    font-family: var(--font-sans);
+    font-feature-settings: 'liga' 1;
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  /* A visible focus ring on everything focusable, and never removed.
+   *
+   * `:focus-visible` rather than `:focus`, so a mouse click does not leave a ring
+   * behind while keyboard navigation always shows one. The offset keeps the ring
+   * clear of the control's own border so it stays legible on both light and dark
+   * surfaces. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+    border-radius: var(--radius-control);
+  }
+
+  /* Honour a reader who has asked for less motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

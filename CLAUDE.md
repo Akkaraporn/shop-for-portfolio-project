@@ -211,6 +211,26 @@ same hash in both languages.
   ESM at their current majors and unusable from a CommonJS build under Jest. Check
   `npm view <pkg> type` before adding one.
 
+## Frontend conventions
+
+- **Tokens live in `apps/web/src/index.css` under `@theme`**, not a
+  `tailwind.config.ts` — Tailwind v4 is CSS-first. One neutral ramp, one `brand`
+  ramp, three semantics, two radii, two shadows.
+- **`brand` is the brand colour; `accent` is shadcn's hover surface.** Do not merge
+  them. A bridging `@theme` block maps shadcn's names onto the ramp so its components
+  stay upgradable.
+- **Never `leading-tight` or `leading-none`.** Thai tone marks get clipped. Every type
+  size already carries a safe line-height, and `npm test` in `apps/web` fails if a
+  tight leading appears anywhere in `src/`.
+- **After `npx shadcn add`, check two things**: it writes `import { cn } from "cn"`
+  (a real, unrelated npm package) instead of `@/lib/utils`, and its components often
+  carry `leading-none`.
+- **Every empty state carries an action**, every error state surfaces the `traceId`,
+  and loading uses a skeleton shaped like the content — not a spinner. See
+  `src/components/state/`.
+- **Vite proxies `/api` to the gateway in development**, so the browser sees one
+  origin exactly as it does in production. No CORS is configured anywhere.
+
 ## Testing
 
 `npm test` runs the unit and in-process HTTP suites and needs nothing. The

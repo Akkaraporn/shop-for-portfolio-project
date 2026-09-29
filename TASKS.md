@@ -282,12 +282,38 @@ each other — two suites' stock assertions failed together while each passed al
 
 | # | Task | Priority | Est. | Done when |
 | --- | --- | --- | --- | --- |
-| 3.0 | 🎨 [Design foundation: tokens, Thai font, component library, wireframes](https://app.clickup.com/t/z8v9xnfz7v) | High | 12h | Tokens in `tailwind.config.ts`, shadcn themed, four wireframes, Thai vowels not clipped |
+| 3.0 | 🎨 [Design foundation: tokens, Thai font, component library, wireframes](https://app.clickup.com/t/z8v9xnfz7v) ✅ | High | 12h | Tokens in `tailwind.config.ts`, shadcn themed, four wireframes, Thai vowels not clipped |
 | 3.1 | [Scaffold + generated API client + query layer](https://app.clickup.com/t/z8v9xnfz61) | High | 8h | Change a field in `openapi.yaml` → `make gen-client` → `tsc` points at every use |
 | 3.2 | [Auth store, refresh interceptor, guest cart token](https://app.clickup.com/t/z8v9xnfz63) | High | — | — |
 | 3.3 | [Catalog, product detail, cart pages](https://app.clickup.com/t/z8v9xnfz67) | High | — | — |
 | 3.4 | ⭐ [Checkout flow: form, idempotency key, payment, confirmation](https://app.clickup.com/t/z8v9xnfz69) | Urgent | — | — |
 | 3.5 | [Admin UI + error handling + dockerize web](https://app.clickup.com/t/z8v9xnfz6a) | Normal | — | — |
+
+### What 3.0 settled
+
+Tokens live in `apps/web/src/index.css` under `@theme`. **The DoD names
+`tailwind.config.ts`; Tailwind v4 is CSS-first and that file no longer holds the
+theme** — the intent, one place rather than scattered across class attributes, is
+what `@theme` is for.
+
+The Thai guard is a test, not a note. Every type size carries its own line-height
+(1.6 body, never below 1.35) and `npm test` fails on any tight-leading utility in
+`src/`. **It immediately caught three shadcn components** — card title, dialog title
+and label all ship `leading-none`, and all three carry Thai copy in this shop.
+
+Contrast is computed, not eyeballed: the test converts the oklch tokens to luminance
+and asserts every text/background pair at 4.5:1 (3:1 for large text and the focus
+ring). That turns "checked with devtools" into something that survives a palette edit.
+
+The brand ramp is called `brand`, not `accent`, because shadcn reserves `accent` for
+the subtle hover surface — one name meaning two things is how a design system starts
+lying. A bridging `@theme` block maps shadcn's token names onto the ramp, so its
+components stay exactly as the registry ships them and survive an upgrade.
+
+Two things the shadcn CLI got wrong and that are worth knowing before the next
+`add`: it generated `import { cn } from "cn"` (an unrelated npm package) instead of
+`@/lib/utils` and installed it, and it pulled in `next-themes` for a dark mode this
+project deliberately does not build. Both removed.
 
 3.0 runs **before** 3.3. Two reasons it is a task and not an afterthought:
 someone opening the demo link judges it in five seconds from the picture, and
