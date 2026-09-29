@@ -105,7 +105,7 @@ built — not reverse-engineered from TypeScript two phases later.
 | # | Task | Priority | Est. | Done when |
 | --- | --- | --- | --- | --- |
 | 2.1 | [Foundation: Prisma, Problem filter, logging, health, cursor codec](https://app.clickup.com/t/z8v9xnfz5d) ✅ | Urgent | 16h | Any error at all comes back as `problem+json`; no HTML error page can escape |
-| 2.2 | [Auth: register, login, JWT guard, refresh rotation](https://app.clickup.com/t/z8v9xnfz5g) | High | 13h | Reusing a rotated refresh token revokes the whole token family |
+| 2.2 | [Auth: register, login, JWT guard, refresh rotation](https://app.clickup.com/t/z8v9xnfz5g) ✅ | High | 13h | Reusing a rotated refresh token revokes the whole token family |
 | 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
 | 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
 | 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
@@ -127,6 +127,25 @@ built — not reverse-engineered from TypeScript two phases later.
 - Host ports for Postgres and Redis are 55432 and 56379, not the defaults, because
   a locally installed instance shadows the published port and connections then
   fail authentication in a way that looks like bad credentials.
+
+### What 2.2 settled
+
+`docs/auth-tokens.md` specifies the claim set, the refresh rotation rules, and the
+argon2 parameters, so 5.4 ports from a document. Three things found while building
+it:
+
+- `@nestjs/jwt` v12 is ESM-only. A CommonJS Nest build can load it only through
+  Node's `require(esm)`, which Jest's runtime cannot do at all and which the
+  node:22 runtime image should not be relying on. Replaced with `jsonwebtoken`
+  directly — one less wrapper, and the algorithm is pinned on sign *and* verify so
+  an `alg: none` token cannot be accepted.
+- Prisma cannot see the unique index on `lower(email)` or the partial unique
+  indexes on `carts`, because both are expressions. So uniqueness is enforced by
+  the database alone, and registration attempts the insert and translates `P2002`
+  rather than pre-checking — which would be a race in any case.
+- Guest-cart claiming here only covers the case where the account has no basket.
+  When it has one the two must be merged, and that is `POST /carts/me/merge` in
+  2.4; doing half of it here would put the same summing rule in two places.
 
 **2.5 is the task the whole project exists for.** It is the one that gets asked
 about, and the one that makes this not a CRUD tutorial. Two rules from it bind

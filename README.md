@@ -66,10 +66,12 @@ Redis, Flyway and the nginx gateway, all reporting healthy, and the backend swap
 is already proven — pointing `BACKEND_HOST` at a different upstream changes which
 implementation answers `/api/v1/health` with no client change at all.
 
-Phase 2 has begun. The NestJS foundation is in `apps/api-node`: zod-validated
+Phase 2 is under way. `apps/api-node` has the foundation — zod-validated
 configuration, an RFC 9457 exception filter that nothing escapes, pino logging
-correlated by request id, `/health` and `/ready`, and the cursor codec — 61 tests,
-no database required to run them.
+correlated by request id, `/health` and `/ready`, the cursor codec — and auth:
+argon2id, a login that leaks neither timing nor which addresses are registered, and
+refresh-token rotation that revokes a whole token family when a consumed token is
+replayed. 115 tests, no database needed to run them.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:

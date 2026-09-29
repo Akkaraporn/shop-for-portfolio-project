@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 
+import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { RolesGuard } from './auth/guards/roles.guard';
 import { LoggerModule } from './common/logging/logger.module';
 import { ConfigModule } from './config/config.module';
 import { HealthModule } from './health/health.module';
@@ -14,10 +18,26 @@ import { RedisModule } from './infra/redis/redis.module';
  * src/bootstrap.ts rather than here, so the test suite and main.ts share one
  * definition of the pipeline.
  *
- * Feature modules (auth, catalog, cart, checkout, orders, payments, admin) arrive
- * with tasks 2.2 through 2.7. This task builds only what all of them need.
+ * The two guards are registered here because they need the DI container. Their
+ * order is significant: JwtAuthGuard attaches the user, RolesGuard reads it.
+ * Authentication being global means an endpoint is protected unless it opts out
+ * with @Public() or @OptionalAuth(), so a forgotten annotation fails closed.
+ *
+ * Remaining feature modules (catalog, cart, checkout, orders, payments, admin)
+ * arrive with tasks 2.3 through 2.7.
  */
 @Module({
-  imports: [ConfigModule, LoggerModule, PrismaModule, RedisModule, HealthModule],
+  imports: [
+    ConfigModule,
+    LoggerModule,
+    PrismaModule,
+    RedisModule,
+    AuthModule,
+    HealthModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
 })
 export class AppModule {}

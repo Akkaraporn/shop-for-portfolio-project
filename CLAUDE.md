@@ -42,6 +42,7 @@ Until Phase 2 exists, `make up-infra` is the one to use.
 | `docs/adr/*.md` | Why each decision was made. |
 | `docs/cursor-format.md` | The cursor codec, byte for byte. Java ports from this. |
 | `docs/problem-types.md` | Every `type` URI and title. Part of the contract. |
+| `docs/auth-tokens.md` | JWT claims, refresh rotation, argon2 parameters. Java ports from this. |
 | `tests/fixtures/cursor-vectors.json` | Shared vectors. Both backends must reproduce them. |
 | `docs/future.md` | What was deliberately not built. |
 
@@ -127,6 +128,14 @@ same hash in both languages.
   assembles a response, so `traceId` and `instance` cannot be forgotten.
 - **Nothing reads `process.env` except `config/env.ts`.** An unvalidated variable
   entering elsewhere makes the zod schema stop being the whole truth.
+- **Authentication is on by default.** `JwtAuthGuard` is an `APP_GUARD`, so an
+  endpoint is protected unless it declares `@Public()` or `@OptionalAuth()` — a
+  forgotten annotation fails closed. `RolesGuard` is registered after it and reads
+  the user it attached, so the order in `AppModule` is significant.
+- **No `@nestjs/jwt` and no Passport.** `@nestjs/jwt` v12 is ESM-only, which a
+  CommonJS build can load only via Node's `require(esm)` — unavailable to Jest and
+  a poor dependency for a production image. `jsonwebtoken` directly, with the
+  algorithm pinned on both sign and verify.
 - **`RedisService` never throws.** Every method returns a miss when the cache is
   unreachable, and `enableOfflineQueue: false` is what stops a Redis outage from
   presenting as request timeouts instead of cache misses.

@@ -1,5 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 
+import { Public } from '../auth/decorators/public.decorator';
 import { Problems } from '../common/problem/problem.exception';
 import { ENV, type Env } from '../config/config.module';
 import { PrismaService } from '../infra/prisma/prisma.service';
@@ -32,6 +33,9 @@ interface ReadinessResponse {
  * which compose profile is running, with no change on the client side at all.
  */
 @Controller()
+// Both probes are unauthenticated: an orchestrator has no credentials, and a
+// liveness check that can fail on authentication is a liveness check that will.
+@Public()
 export class HealthController {
   constructor(
     @Inject(ENV) private readonly env: Env,
