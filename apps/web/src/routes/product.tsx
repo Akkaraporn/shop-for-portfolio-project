@@ -30,7 +30,7 @@ export function ProductPage() {
   }
 
   if (product.isError) {
-    const notFound = product.error instanceof ProblemError && product.error.status === 404;
+    const notFound = product.error instanceof ProblemError && product.error.slug === 'not-found';
     return (
       <main className="mx-auto max-w-3xl px-4 py-12">
         {notFound ? (
@@ -41,7 +41,7 @@ export function ProductPage() {
           />
         ) : (
           <ErrorState
-            traceId={product.error instanceof ProblemError ? product.error.traceId : undefined}
+            error={product.error}
             onRetry={() => void product.refetch()}
           />
         )}
@@ -64,13 +64,8 @@ export function ProductPage() {
     add.mutate(
       { variantId: selected.id, quantity: 1 },
       {
+        // Failure is reported by useAddToCart itself, like every basket change.
         onSuccess: () => toast.success(`เพิ่ม ${data.name} (${selected.name}) ลงตะกร้าแล้ว`),
-        onError: (error) =>
-          toast.error(
-            error instanceof ProblemError && error.slug === 'insufficient-stock'
-              ? 'สินค้าที่เหลือไม่พอสำหรับจำนวนนี้'
-              : 'เพิ่มลงตะกร้าไม่สำเร็จ ลองใหม่อีกครั้ง',
-          ),
       },
     );
   }

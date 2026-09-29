@@ -1,7 +1,6 @@
 # web
 
-The React storefront. Task 3.0 built its design foundation; the pages arrive with
-3.3 and 3.4.
+The React storefront.
 
 ```bash
 npm run dev         # http://localhost:5173, /api proxied to the gateway on :8080
@@ -16,7 +15,11 @@ place to check a token change.
 
 ```bash
 npm run e2e          # Chromium through the whole purchase; needs `make up-node`
+E2E_BASE_URL=http://localhost:8080 npm run e2e   # same suite, against the built image
 ```
+
+`make up-node` also builds this app into an nginx image and serves it through the
+gateway at http://localhost:8080 — no dev server needed.
 
 Demo account: `somchai@example.com` / `DemoPass123!`. Test cards are offered as buttons
 on the payment step: one succeeds, one is declined.

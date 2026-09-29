@@ -1,7 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import { Link, useNavigate } from 'react-router';
 
-import { ProblemError } from '@/api/client';
 import { useCart } from '@/api/hooks';
 import { EmptyCart } from '@/components/state/empty-state';
 import { ErrorState } from '@/components/state/error-state';
@@ -27,7 +26,7 @@ export function CartPage() {
     return (
       <main className="mx-auto max-w-3xl px-4 py-12">
         <ErrorState
-          traceId={cart.error instanceof ProblemError ? cart.error.traceId : undefined}
+          error={cart.error}
           onRetry={() => void cart.refetch()}
         />
       </main>

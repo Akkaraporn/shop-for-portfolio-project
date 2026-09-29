@@ -1,5 +1,6 @@
 import { AlertTriangle, RefreshCw, WifiOff } from 'lucide-react';
 
+import { describeError } from '@/api/problem-messages';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -10,6 +11,11 @@ interface ErrorStateProps {
   onRetry?: () => void;
   /** The traceId from the Problem response, so a report can be tied to a log line. */
   traceId?: string;
+  /**
+   * The thrown error. When given, the description and traceId come from it — the Thai
+   * message for its problem `type` — unless passed explicitly.
+   */
+  error?: unknown;
   className?: string;
 }
 
@@ -23,11 +29,18 @@ interface ErrorStateProps {
  */
 export function ErrorState({
   title = 'มีบางอย่างผิดพลาด',
-  description = 'โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง หากยังไม่ได้ กรุณารอสักครู่แล้วลองอีกที',
+  description,
   onRetry,
   traceId,
+  error,
   className,
 }: ErrorStateProps) {
+  const described = error === undefined ? undefined : describeError(error);
+  description ??=
+    described?.message ??
+    'โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง หากยังไม่ได้ กรุณารอสักครู่แล้วลองอีกที';
+  traceId ??= described?.traceId;
+
   return (
     <div
       role="alert"

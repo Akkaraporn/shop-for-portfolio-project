@@ -6,10 +6,13 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
+import { toast } from 'sonner';
+
 import { useSession } from '@/auth/session';
 
 import { apiFetch, type Paged, type Schemas } from './client';
 import { keys } from './keys';
+import { describeError } from './problem-messages';
 import type { paths } from './schema';
 
 /**
@@ -93,6 +96,12 @@ function useCartMutation<TVars>(request: (vars: TVars) => Promise<Schemas['Cart'
   return useMutation({
     mutationFn: request,
     onSuccess: (cart) => queryClient.setQueryData(identity.key, cart),
+    // The stepper and remove buttons have no error UI of their own. A failure that
+    // changes nothing on screen reads as a dead button; say why, then show the truth.
+    onError: (error) => {
+      toast.error(describeError(error).message);
+      void queryClient.invalidateQueries({ queryKey: identity.key });
+    },
   });
 }
 

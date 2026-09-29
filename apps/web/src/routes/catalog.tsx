@@ -2,7 +2,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router';
 
-import { ProblemError, type Schemas } from '@/api/client';
+import { type Schemas } from '@/api/client';
 import { useCategories, useProducts, type ProductFilters } from '@/api/hooks';
 import { EmptySearch } from '@/components/state/empty-state';
 import { ErrorState } from '@/components/state/error-state';
@@ -155,7 +155,7 @@ export function CatalogPage() {
           </>
         ) : products.isError ? (
           <ErrorState
-            traceId={products.error instanceof ProblemError ? products.error.traceId : undefined}
+            error={products.error}
             onRetry={() => void products.refetch()}
           />
         ) : items.length === 0 ? (

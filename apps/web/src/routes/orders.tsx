@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
 
 import { apiFetch, ProblemError, type Schemas } from '@/api/client';
+import { describeError } from '@/api/problem-messages';
 import { isSettled, useCancelOrder, useConfirmPayment, useOrders } from '@/api/hooks';
 import { keys } from '@/api/keys';
 import { EmptyOrders, EmptyState } from '@/components/state/empty-state';
@@ -109,10 +110,11 @@ export function OrderPage() {
   }
 
   if (order.isError) {
-    const status = order.error instanceof ProblemError ? order.error.status : 0;
+    // By problem type, never by status code: both say "not yours to see" here.
+    const slug = order.error instanceof ProblemError ? order.error.slug : '';
     return (
       <main className="mx-auto max-w-3xl px-4 py-12">
-        {status === 404 || status === 403 ? (
+        {slug === 'not-found' || slug === 'forbidden' ? (
           <EmptyState
             title="ไม่พบคำสั่งซื้อนี้"
             description="คำสั่งซื้ออาจไม่ใช่ของบัญชีนี้ หรือเลขที่คำสั่งซื้อไม่ถูกต้อง"
@@ -120,7 +122,7 @@ export function OrderPage() {
           />
         ) : (
           <ErrorState
-            traceId={order.error instanceof ProblemError ? order.error.traceId : undefined}
+            error={order.error}
             onRetry={() => void order.refetch()}
           />
         )}
@@ -141,11 +143,7 @@ export function OrderPage() {
           void order.refetch();
         },
         onError: (error) =>
-          toast.error(
-            error instanceof ProblemError && error.slug === 'payment-not-confirmable'
-              ? 'คำสั่งซื้อนี้ไม่อยู่ในสถานะที่ชำระเงินได้แล้ว'
-              : 'ส่งคำสั่งชำระเงินไม่สำเร็จ ลองใหม่อีกครั้ง',
-          ),
+          toast.error(describeError(error).message),
       },
     );
   }
@@ -266,7 +264,7 @@ export function OrderPage() {
           onClick={() =>
             cancel.mutate(data.orderNumber, {
               onSuccess: () => toast.success('ยกเลิกคำสั่งซื้อแล้ว สินค้าที่จองไว้ถูกปล่อยคืน'),
-              onError: () => toast.error('ยกเลิกไม่สำเร็จ ลองใหม่อีกครั้ง'),
+              onError: (error) => toast.error(describeError(error).message),
             })
           }
         >
@@ -296,7 +294,7 @@ export function OrdersPage() {
           <OrderRowSkeleton />
         </div>
       ) : orders.isError ? (
-        <ErrorState onRetry={() => void orders.refetch()} />
+        <ErrorState error={orders.error} onRetry={() => void orders.refetch()} />
       ) : items.length === 0 ? (
         <EmptyOrders />
       ) : (

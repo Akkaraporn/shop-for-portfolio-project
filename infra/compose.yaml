@@ -126,13 +126,16 @@ services:
 
   # --- frontend + gateway -------------------------------------------------
 
-  # Behind a profile until Phase 3 creates its Dockerfile: without this, every
-  # `up` tries to build an image from an empty directory and fails. `make up-node`
-  # will include it once apps/web can build (task 3.5).
+  # No profile: the same static build serves either backend, because the
+  # gateway puts both behind one origin. `make up-node` and `make up-java` both
+  # bring it up.
   web:
-    profiles: ["web"]
     build:
       context: ../apps/web
+      # The build generates the API types from the contract, which lives outside
+      # this context. Passed in by name rather than widening the context to the repo.
+      additional_contexts:
+        contract: ../contract
     restart: unless-stopped
 
   # nginx:alpine runs envsubst over /etc/nginx/templates/*.template on boot,

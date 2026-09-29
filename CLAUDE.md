@@ -29,7 +29,8 @@ The gateway is at `http://localhost:8080`; the API lives under `/api/v1`.
 `GET /__gateway/health` is answered by nginx itself and reports which backend it
 is proxying to, so it works even when that backend is down.
 
-Until Phase 2 exists, `make up-infra` is the one to use.
+`make up-node` serves the built shop at http://localhost:8080; `npm run dev` in
+`apps/web` gives hot reload at :5173 against the same backend.
 
 ## Who owns what
 
@@ -242,6 +243,8 @@ same hash in both languages.
   or a reload asks as a guest before the session is restored.
 - **The Idempotency-Key is created when the checkout page mounts**, and a ref — not
   `isPending` — guards against a second submit in the same tick.
+- **Show errors with `describeError` or `<ErrorState error={…}>`**, which switch on the
+  problem `type`. Never branch on `status` or message text — five problems share 409.
 - **`npm run e2e` in `apps/web`** drives Chromium against the live stack
   (`make up-node` first). Anything the shopper does belongs there.
 

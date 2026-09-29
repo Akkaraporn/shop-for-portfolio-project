@@ -10,6 +10,7 @@ import { CheckoutPage } from '@/routes/checkout';
 import { Layout } from '@/routes/layout';
 import { OrderPage, OrdersPage } from '@/routes/orders';
 import { ProductPage } from '@/routes/product';
+import { RootError, RouteError } from '@/routes/route-error';
 
 function NotFound() {
   return (
@@ -26,17 +27,46 @@ function NotFound() {
 export const router = createBrowserRouter([
   {
     element: <Layout />,
+    errorElement: <RootError />,
     children: [
-      { index: true, element: <CatalogPage /> },
-      { path: 'products/:slug', element: <ProductPage /> },
-      { path: 'cart', element: <CartPage /> },
-      // An order belongs to a user, so checkout and everything after it require one.
-      { path: 'checkout', element: <RequireAuth><CheckoutPage /></RequireAuth> },
-      { path: 'orders', element: <RequireAuth><OrdersPage /></RequireAuth> },
-      { path: 'orders/:orderNumber', element: <RequireAuth><OrderPage /></RequireAuth> },
-      { path: 'login', element: <LoginPage /> },
-      { path: 'register', element: <RegisterPage /> },
-      { path: '*', element: <NotFound /> },
+      {
+        // Pathless, so a page that throws is replaced by RouteError while the layout
+        // around it — header, search, basket — keeps working.
+        errorElement: <RouteError />,
+        children: [
+          { index: true, element: <CatalogPage /> },
+          { path: 'products/:slug', element: <ProductPage /> },
+          { path: 'cart', element: <CartPage /> },
+          // An order belongs to a user, so checkout and everything after it require one.
+          {
+            path: 'checkout',
+            element: (
+              <RequireAuth>
+                <CheckoutPage />
+              </RequireAuth>
+            ),
+          },
+          {
+            path: 'orders',
+            element: (
+              <RequireAuth>
+                <OrdersPage />
+              </RequireAuth>
+            ),
+          },
+          {
+            path: 'orders/:orderNumber',
+            element: (
+              <RequireAuth>
+                <OrderPage />
+              </RequireAuth>
+            ),
+          },
+          { path: 'login', element: <LoginPage /> },
+          { path: 'register', element: <RegisterPage /> },
+          { path: '*', element: <NotFound /> },
+        ],
+      },
     ],
   },
   // The design system stays reachable, outside the shop chrome, as the place to check

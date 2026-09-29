@@ -34,10 +34,10 @@ up-java: ## Bring up the stack on the Spring Boot backend (needs apps/api-java b
 	BACKEND_HOST=api-java BACKEND_PORT=8080 $(COMPOSE) --profile java up -d --build
 
 down: ## Stop everything (keeps the database volume)
-	$(COMPOSE) --profile node --profile java --profile web down
+	$(COMPOSE) --profile node --profile java down
 
 clean: ## Stop everything and wipe the database volume (next up re-seeds)
-	$(COMPOSE) --profile node --profile java --profile web down -v
+	$(COMPOSE) --profile node --profile java down -v
 
 logs: ## Tail logs from every running service
 	$(COMPOSE) logs -f --tail=100

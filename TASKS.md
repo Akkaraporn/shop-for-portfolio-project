@@ -356,6 +356,22 @@ real Chromium against the real backend — 10 tests, including every task's DoD.
 - **Contract gap:** there is no way to know the shipping fee before the order exists,
   so checkout says it will be shown after confirming. Parked in `docs/future.md`.
 
+### What 3.5 settled (partly — the admin UI waits on 2.7)
+
+- **`make up-node` serves the whole shop at http://localhost:8080** — the built app
+  behind nginx, no dev server. The e2e suite passes there too:
+  `E2E_BASE_URL=http://localhost:8080 npm run e2e`.
+- The web image gets the contract as a named second build context
+  (`additional_contexts`), because the build regenerates the API types from it.
+- **Error messages are keyed on the problem `type` only** (`src/api/problem-messages.ts`),
+  never the status or the English text. A test fails if a type in
+  `docs/problem-types.md` has no Thai message; an unknown type falls back to the
+  English `title`. Two pages that checked `status === 404` now check the type.
+- A route-level error boundary sits inside the layout, so a page that crashes leaves
+  the header and basket usable.
+- **Not built: the admin UI.** Its API (task 2.7) was never implemented, and both are
+  named as the first cuts. Doing them means 2.7 first, then the admin pages.
+
 The iron rule from 3.1: **never hand-write an API type.** Import from
 `@/api/schema`. A hand-written interface throws away the entire benefit of
 working contract-first — the build stops being able to catch a backend that has

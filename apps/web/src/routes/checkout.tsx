@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router';
 
 import { ProblemError, type Schemas } from '@/api/client';
 import { useCart, useCheckout } from '@/api/hooks';
+import { describeError } from '@/api/problem-messages';
 import { EmptyCart } from '@/components/state/empty-state';
 import { ErrorState } from '@/components/state/error-state';
 import { CartLineSkeleton, LoadingAnnouncement } from '@/components/state/skeletons';
@@ -144,7 +145,7 @@ export function CheckoutPage() {
   if (cart.isError) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-12">
-        <ErrorState onRetry={() => void cart.refetch()} />
+        <ErrorState error={cart.error} onRetry={() => void cart.refetch()} />
       </main>
     );
   }
@@ -179,7 +180,7 @@ export function CheckoutPage() {
         ) : problem && problem.slug !== 'validation-failed' ? (
           <ErrorState
             title="สั่งซื้อไม่สำเร็จ"
-            description="ยังไม่มีการสร้างคำสั่งซื้อ ลองกดยืนยันอีกครั้งได้เลย"
+            description={`${describeError(problem).message} — ยังไม่มีการสร้างคำสั่งซื้อ`}
             traceId={problem.traceId}
           />
         ) : null}
