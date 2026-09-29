@@ -283,7 +283,7 @@ each other — two suites' stock assertions failed together while each passed al
 | # | Task | Priority | Est. | Done when |
 | --- | --- | --- | --- | --- |
 | 3.0 | 🎨 [Design foundation: tokens, Thai font, component library, wireframes](https://app.clickup.com/t/z8v9xnfz7v) ✅ | High | 12h | Tokens in `tailwind.config.ts`, shadcn themed, four wireframes, Thai vowels not clipped |
-| 3.1 | [Scaffold + generated API client + query layer](https://app.clickup.com/t/z8v9xnfz61) | High | 8h | Change a field in `openapi.yaml` → `make gen-client` → `tsc` points at every use |
+| 3.1 | [Scaffold + generated API client + query layer](https://app.clickup.com/t/z8v9xnfz61) ✅ | High | 8h | Change a field in `openapi.yaml` → `make gen-client` → `tsc` points at every use |
 | 3.2 | [Auth store, refresh interceptor, guest cart token](https://app.clickup.com/t/z8v9xnfz63) | High | — | — |
 | 3.3 | [Catalog, product detail, cart pages](https://app.clickup.com/t/z8v9xnfz67) | High | — | — |
 | 3.4 | ⭐ [Checkout flow: form, idempotency key, payment, confirmation](https://app.clickup.com/t/z8v9xnfz69) | Urgent | — | — |
@@ -318,6 +318,20 @@ project deliberately does not build. Both removed.
 3.0 runs **before** 3.3. Two reasons it is a task and not an afterthought:
 someone opening the demo link judges it in five seconds from the picture, and
 without tokens fixed up front every page drifts a little from the last one.
+
+### What 3.1 settled
+
+Types are generated from the contract and **regenerated before every dev, build,
+typecheck and test run**, and never committed — so they cannot be stale. The DoD was
+demonstrated directly: renaming `Health.implementation` in the contract made `tsc`
+fail at exactly the one line in the app that read it. The pre-commit hook now
+typechecks the frontend whenever the contract changes.
+
+Every failure a page sees is one of two classes: `ProblemError` (carrying the RFC 9457
+body, with the slug and `traceId`) or `NetworkError`. Only the second is retried —
+a 4xx sends the same bad request again, and a 5xx from this API needs a traceId, not
+repetition. Mutations are never retried automatically; checkout's safety comes from
+its Idempotency-Key.
 
 The iron rule from 3.1: **never hand-write an API type.** Import from
 `@/api/schema`. A hand-written interface throws away the entire benefit of

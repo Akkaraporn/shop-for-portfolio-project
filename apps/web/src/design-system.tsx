@@ -1,6 +1,8 @@
 import { ShoppingCart } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useHealth } from '@/api/meta';
+
 import { EmptyCart, EmptyOrders, EmptySearch } from '@/components/state/empty-state';
 import { ErrorState, OfflineState } from '@/components/state/error-state';
 import {
@@ -67,13 +69,30 @@ function Section({
   );
 }
 
+function BackendBadge() {
+  const health = useHealth();
+
+  if (health.isPending) {
+    return <Badge variant="outline">กำลังเชื่อมต่อ API…</Badge>;
+  }
+  if (health.isError) {
+    return <Badge variant="destructive">API ไม่ตอบสนอง</Badge>;
+  }
+  return (
+    <Badge variant="secondary">
+      backend: {health.data.implementation} {health.data.version}
+    </Badge>
+  );
+}
+
 export function DesignSystem() {
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-12 px-4 py-12 lg:px-6">
       <header className="flex flex-col gap-2">
-        <Badge variant="secondary" className="w-fit">
-          task 3.0
-        </Badge>
+        <div className="flex gap-2">
+          <Badge variant="secondary">task 3.0</Badge>
+          <BackendBadge />
+        </div>
         <h1 className="text-4xl font-semibold">ระบบดีไซน์ · Design system</h1>
         <p className="max-w-prose text-muted-foreground">
           ทุกโทเคน สี ระยะห่าง และสถานะที่ร้านนี้ใช้ อยู่ในหน้าเดียวกันทั้งหมด

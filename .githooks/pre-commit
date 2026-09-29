@@ -3,11 +3,15 @@
 # only when you already know why.
 #
 # The contract is the source of truth for two backends and the frontend's types.
-# A commit that leaves it failing its own rules makes every downstream artifact
-# suspect, so the gate lives here rather than only in CI.
+# A change to it is linted, and the frontend is typechecked against the regenerated
+# types — so a contract edit that breaks a page fails here, not in a browser.
 set -e
 
 if git diff --cached --name-only --diff-filter=ACM | grep -qE '^contract/'; then
     echo "pre-commit: contract changed, linting..."
     make lint-contract
+    if [ -d apps/web/node_modules ]; then
+        echo "pre-commit: typechecking the frontend against the new contract..."
+        (cd apps/web && npm run typecheck --silent)
+    fi
 fi
