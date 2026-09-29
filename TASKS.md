@@ -106,7 +106,7 @@ built — not reverse-engineered from TypeScript two phases later.
 | --- | --- | --- | --- | --- |
 | 2.1 | [Foundation: Prisma, Problem filter, logging, health, cursor codec](https://app.clickup.com/t/z8v9xnfz5d) ✅ | Urgent | 16h | Any error at all comes back as `problem+json`; no HTML error page can escape |
 | 2.2 | [Auth: register, login, JWT guard, refresh rotation](https://app.clickup.com/t/z8v9xnfz5g) ✅ | High | 13h | Reusing a rotated refresh token revokes the whole token family |
-| 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
+| 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) ✅ | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
 | 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
 | 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
 | 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) | High | 15h | Same webhook delivered five times decrements stock once |
@@ -167,6 +167,24 @@ builds. Everything then checked out:
 - All 22 schema constraint checks pass on the rebuilt database.
 - Ten concurrent refreshes of one token: exactly one succeeded, and the family was
   left with **zero** live tokens — see `docs/auth-tokens.md`.
+
+### What 2.3 settled
+
+The product listing is one raw SQL query, not the Prisma query builder, and each of
+three reasons rules the builder out on its own: `categorySlug` needs a recursive CTE
+for the subtree; the cursor predicate is a row-value comparison `(sort_col, id) < (:v, :i)`
+which the builder would render as `sort_col < :v AND id < :i` — a different and wrong
+condition that drops every tied row; and search needs a trigram `ILIKE` against the
+expression index. **The Java port needs a native query for the same three reasons.**
+
+`GET /products` is covered by an integration suite that runs against a real
+PostgreSQL with the seed applied (`npm run test:integration`), because every claim
+here is a database behaviour a double could not check. 44 tests, including walking
+the cursor to exhaustion under all four sorts and asserting no row is seen twice or
+missed, and that archiving a row from page one does not shift page two.
+
+`npm test` excludes those and stays green without Docker; the integration suite skips
+loudly rather than failing when no database is reachable.
 
 **2.5 is the task the whole project exists for.** It is the one that gets asked
 about, and the one that makes this not a CRUD tutorial. Two rules from it bind

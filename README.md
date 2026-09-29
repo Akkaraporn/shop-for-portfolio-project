@@ -71,9 +71,12 @@ configuration, an RFC 9457 exception filter that nothing escapes, pino logging
 correlated by request id, `/health` and `/ready`, the cursor codec — and auth:
 argon2id, a login that leaks neither timing nor which addresses are registered, and
 refresh-token rotation that revokes a whole token family when a consumed token is
-replayed. 115 tests, no database needed to run them — and verified against a live
-PostgreSQL 16 through the compose stack, where the seeded demo accounts really do
-log in.
+replayed. and the catalogue: a category tree cached in Redis, cursor-paginated product
+listing with four sorts, trigram search that works on Thai, and product detail.
+
+159 tests — 115 that need nothing, and 44 that run against a live PostgreSQL 16
+because what they check (the recursive category CTE, keyset pagination, trigram
+search) is database behaviour a test double could not prove.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:

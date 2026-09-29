@@ -9,10 +9,12 @@
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
+    "test": "jest --testPathIgnorePatterns integration-spec",
     "test:watch": "jest --watch",
     "prisma:pull": "prisma db pull && prisma generate",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "test:integration": "jest --testPathPattern integration-spec",
+    "test:all": "jest"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -48,7 +50,7 @@
     "preset": "ts-jest",
     "testEnvironment": "node",
     "rootDir": "src",
-    "testRegex": ".*\\.(spec|e2e-spec)\\.ts$",
+    "testRegex": ".*\\.(spec|e2e-spec|integration-spec)\\.ts$",
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/$1"
     }

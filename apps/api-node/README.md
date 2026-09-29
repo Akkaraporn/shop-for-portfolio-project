@@ -77,13 +77,21 @@ or pipe is registered differently from production.
 ## Tests
 
 ```bash
-npm test          # unit + in-process HTTP
+npm test               # unit + in-process HTTP. Needs nothing.
+npm run test:integration   # needs a live database: make up-infra first
+npm run test:all
 npm run typecheck
 ```
 
-No database or Redis is needed: the HTTP suites substitute both, which is how the
-"Redis is down but readiness still passes" and "Postgres is down so readiness is
-503" cases get tested at all.
+`npm test` substitutes the database and Redis, which is how the "Redis is down but
+readiness still passes" and "Postgres is down so readiness is 503" cases get tested
+at all.
+
+`npm run test:integration` runs against a real PostgreSQL with the seed applied, and
+is where anything that is genuinely a database behaviour lives — the recursive
+category CTE, keyset pagination under concurrent writes, trigram search on Thai. A
+double would only prove the double works. Those suites skip loudly when no database
+is reachable, so the default `npm test` stays green on a machine without Docker.
 
 The cursor suite reads
 [`tests/fixtures/cursor-vectors.json`](../../tests/fixtures/cursor-vectors.json),

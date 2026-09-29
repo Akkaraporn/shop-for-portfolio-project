@@ -140,6 +140,31 @@ same hash in both languages.
   unreachable, and `enableOfflineQueue: false` is what stops a Redis outage from
   presenting as request timeouts instead of cache misses.
 
+## Catalogue conventions
+
+- **The product listing is raw SQL** (`products.service.ts`). Keyset pagination needs
+  a row-value comparison, the category filter needs a recursive CTE, and search needs
+  a trigram `ILIKE` against an expression index — the query builder can express none
+  of the three. Every user value is still a bound parameter; the only assembled SQL is
+  the sort column and direction, from a fixed table keyed by a validated literal.
+- **Name ordering is delegated to Postgres.** Both backends sort in the database
+  rather than in application code, so they cannot disagree about Thai collation.
+- **`productCount` on a category counts products filed *directly* in it**, not its
+  subtree — while the `categorySlug` filter *does* include descendants. The two
+  numbers legitimately differ for a parent.
+- **A draft or archived product is a 404**, indistinguishable from one that never
+  existed. Saying "exists but hidden" would leak the unpublished catalogue.
+- **Escape `%` and `_` in search terms.** They are `ILIKE` wildcards; unescaped, a
+  search for `%` returns the entire catalogue.
+
+## Testing
+
+`npm test` runs the unit and in-process HTTP suites and needs nothing. The
+integration suites (`*.integration-spec.ts`, via `npm run test:integration`) need a
+live database — `make up-infra` first — and skip loudly without one. Anything that is
+genuinely a database behaviour belongs there: a double would only prove the double
+works.
+
 ## Rules that are easy to get wrong
 
 - **Lock variants in ascending UUID order** during checkout. Two carts sharing

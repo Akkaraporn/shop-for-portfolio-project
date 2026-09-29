@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
 import { AuthModule } from './auth/auth.module';
+import { CatalogModule } from './catalog/catalog.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { LoggerModule } from './common/logging/logger.module';
@@ -23,8 +24,8 @@ import { RedisModule } from './infra/redis/redis.module';
  * Authentication being global means an endpoint is protected unless it opts out
  * with @Public() or @OptionalAuth(), so a forgotten annotation fails closed.
  *
- * Remaining feature modules (catalog, cart, checkout, orders, payments, admin)
- * arrive with tasks 2.3 through 2.7.
+ * Remaining feature modules (cart, checkout, orders, payments, admin) arrive with
+ * tasks 2.4 through 2.7.
  */
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { RedisModule } from './infra/redis/redis.module';
     PrismaModule,
     RedisModule,
     AuthModule,
+    CatalogModule,
     HealthModule,
   ],
   providers: [
