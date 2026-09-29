@@ -12,6 +12,18 @@ import type { components } from './schema';
 export type Schemas = components['schemas'];
 export type Problem = Schemas['Problem'];
 
+/**
+ * A page of `T`, built from the generated envelope.
+ *
+ * The contract's `Page` schema is generic in spirit but OpenAPI has no generics, so its
+ * `items` is declared as `{}` and each concrete page (`ProductPage`, `OrderPage`…) is an
+ * `allOf` that narrows it. openapi-typescript renders that as `unknown[] & T[]`, and an
+ * intersection of array types resolves `.map` against the `unknown[]` overload — so every
+ * item arrives as `unknown`. This replaces `items` with the concrete type while keeping
+ * `hasMore` and `nextCursor` exactly as generated.
+ */
+export type Paged<T> = Omit<Schemas['Page'], 'items'> & { items: T[] };
+
 export const API_BASE = '/api/v1';
 
 /**

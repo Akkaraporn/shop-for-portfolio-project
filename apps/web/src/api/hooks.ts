@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import { apiFetch, type Schemas } from './client';
+import { apiFetch, type Paged, type Schemas } from './client';
 import { keys } from './keys';
 import type { paths } from './schema';
 
@@ -22,7 +22,7 @@ export type ProductFilters = NonNullable<paths['/products']['get']['parameters']
 export function useCategories() {
   return useQuery({
     queryKey: keys.categories,
-    queryFn: ({ signal }) => apiFetch<Schemas['CategoryPage']>('/categories', { signal }),
+    queryFn: ({ signal }) => apiFetch<Paged<Schemas['Category']>>('/categories', { signal }),
     staleTime: 5 * 60_000, // matches the server's Cache-Control
   });
 }
@@ -31,7 +31,7 @@ export function useProducts(filters: Omit<ProductFilters, 'cursor'>) {
   return useInfiniteQuery({
     queryKey: keys.products.list(filters),
     queryFn: ({ pageParam, signal }) =>
-      apiFetch<Schemas['ProductPage']>('/products', {
+      apiFetch<Paged<Schemas['ProductSummary']>>('/products', {
         query: { ...filters, cursor: pageParam },
         signal,
       }),
@@ -146,7 +146,7 @@ export function useOrders() {
   return useInfiniteQuery({
     queryKey: keys.orders.all,
     queryFn: ({ pageParam, signal }) =>
-      apiFetch<Schemas['OrderPage']>('/orders', { query: { cursor: pageParam }, signal }),
+      apiFetch<Paged<Schemas['Order']>>('/orders', { query: { cursor: pageParam }, signal }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
