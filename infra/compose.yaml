@@ -114,13 +114,23 @@ services:
 
   # --- frontend + gateway -------------------------------------------------
 
+  # Behind a profile until Phase 3 creates its Dockerfile: without this, every
+  # `up` tries to build an image from an empty directory and fails. `make up-node`
+  # will include it once apps/web can build (task 3.5).
   web:
+    profiles: ["web"]
     build:
       context: ../apps/web
     restart: unless-stopped
 
   # nginx:alpine runs envsubst over /etc/nginx/templates/*.template on boot,
   # so BACKEND_HOST is all that changes between the two profiles.
+  #
+  # No depends_on, deliberately. The gateway resolves its upstreams per request
+  # (see the template), so it starts and stays up whether or not a backend or the
+  # frontend is running, answering 503 for whichever is absent. That is what lets
+  # `make up-infra` be useful before Phase 2 exists, and what stops a backend
+  # restart from taking the gateway with it.
   gateway:
     image: nginx:alpine
     restart: unless-stopped
@@ -131,9 +141,14 @@ services:
       - "${GATEWAY_PORT:-8080}:80"
     volumes:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
-    depends_on:
-      web:
-        condition: service_started
+    healthcheck:
+      # 127.0.0.1, not localhost: inside the container localhost resolves to ::1
+      # first and nginx listens on IPv4 only, so the probe would be refused.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/__gateway/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   pgdata:

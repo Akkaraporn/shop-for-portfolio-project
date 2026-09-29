@@ -1,25 +1,46 @@
-# Rendered by envsubst at container start. ${BACKEND_HOST} is the only thing
-# that differs between `make up-node` and `make up-java` — the browser sees
-# one origin either way, so there is no CORS to configure and no client change.
-upstream backend {
-    server ${BACKEND_HOST}:${BACKEND_PORT};
-}
+# Rendered by envsubst at container start (nginx:alpine does this automatically
+# for /etc/nginx/templates/*.template). ${BACKEND_HOST} is the only thing that
+# differs between `make up-node` and `make up-java` — the browser sees one origin
+# either way, so there is no CORS to configure and no client change.
+#
+# Upstreams are resolved per request through Docker's embedded DNS rather than
+# declared in an `upstream` block. That matters: nginx resolves names in an
+# `upstream` block once, at config load, and *exits* if one does not resolve. With
+# a declared upstream the gateway cannot start unless the backend is already
+# running — so it could not be brought up or tested before Phase 2 existed, and
+# in normal operation a backend restart would take the gateway down with it.
+# Resolving late costs one DNS lookup per request against a local resolver and
+# turns "cannot boot" into "returns 503 until the backend is back".
 
-upstream frontend {
-    server web:80;
-}
+resolver 127.0.0.11 valid=10s ipv6=off;
 
 server {
     listen 80;
     server_name _;
 
-    # Which implementation answered is visible in GET /api/v1/health.
+    # Which implementation is being proxied to. GET /api/v1/health reports the
+    # same thing from the backend's own mouth; this header answers it even when
+    # the backend is down.
     add_header X-Gateway-Backend "${BACKEND_HOST}" always;
 
     client_max_body_size 8m;
 
+    # Answered by nginx itself, so it reports the gateway's health and not the
+    # backend's. Used by the compose healthcheck.
+    location = /__gateway/health {
+        access_log off;
+        default_type application/json;
+        return 200 '{"status":"ok","backend":"${BACKEND_HOST}:${BACKEND_PORT}"}';
+    }
+
     location /api/ {
-        proxy_pass         http://backend;
+        # In a variable, so the name is resolved at request time. $request_uri
+        # carries the original path and query through unchanged — nginx does not
+        # apply the location's prefix rewrite when proxy_pass has a variable in
+        # it, which is what we want: the backend serves the full /api/v1/... path.
+        set $upstream_api "${BACKEND_HOST}:${BACKEND_PORT}";
+        proxy_pass         http://$upstream_api$request_uri;
+
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
@@ -27,15 +48,36 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_set_header   X-Request-Id      $request_id;
 
-        # Checkout holds row locks while it reserves stock; do not cut it short.
+        # Checkout holds row locks while it reserves stock. Do not cut it short.
         proxy_read_timeout 30s;
+        proxy_connect_timeout 5s;
 
         # Problem responses are small and already final — never buffer or rewrite.
         proxy_buffering off;
+
+        # A backend that is down must not produce an HTML error page. Every error
+        # under /api/ is problem+json, including the ones nginx invents.
+        proxy_intercept_errors off;
+        error_page 502 503 504 = @api_unavailable;
+    }
+
+    location @api_unavailable {
+        access_log on;
+        default_type application/problem+json;
+        return 503 '{"type":"https://errors.example.com/backend-unavailable","title":"Backend unavailable","status":503,"detail":"The API backend is not reachable through the gateway. If this is a local stack, check that a backend profile is running: make up-node or make up-java."}';
     }
 
     location / {
-        proxy_pass       http://frontend;
+        set $upstream_web "web:80";
+        proxy_pass       http://$upstream_web$request_uri;
         proxy_set_header Host $host;
+        proxy_connect_timeout 5s;
+
+        error_page 502 503 504 = @web_unavailable;
+    }
+
+    location @web_unavailable {
+        default_type text/html;
+        return 503 '<!doctype html><meta charset="utf-8"><title>Frontend not running</title><body style="font:16px system-ui;max-width:34rem;margin:20vh auto;padding:0 1rem"><h1>Frontend not running</h1><p>The gateway is up and <code>/api/</code> is being proxied to <code>${BACKEND_HOST}</code>, but no frontend container is serving this origin.</p><p>Bring up the whole stack with <code>make up-node</code>, or just the data layer with <code>make up-infra</code>.</p></body>';
     }
 }

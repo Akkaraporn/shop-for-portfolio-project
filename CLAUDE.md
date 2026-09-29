@@ -11,8 +11,9 @@ The plan lives in `TASKS.md` and, in full, on the
 ## Commands
 
 ```
-make up-node        # whole stack, gateway -> NestJS
-make up-java        # whole stack, gateway -> Spring Boot
+make up-infra       # Postgres + Redis + Flyway + gateway, no app images needed
+make up-node        # whole stack, gateway -> NestJS   (needs apps/api-node/Dockerfile)
+make up-java        # whole stack, gateway -> Spring Boot (needs apps/api-java/Dockerfile)
 make down           # stop, keep the database volume
 make clean          # stop and wipe the volume (next up re-seeds)
 make lint-contract  # Spectral over contract/openapi.yaml
@@ -25,6 +26,10 @@ make hooks          # install the git hooks (once per clone)
 ```
 
 The gateway is at `http://localhost:8080`; the API lives under `/api/v1`.
+`GET /__gateway/health` is answered by nginx itself and reports which backend it
+is proxying to, so it works even when that backend is down.
+
+Until Phase 2 exists, `make up-infra` is the one to use.
 
 ## Who owns what
 

@@ -22,17 +22,22 @@ hooks: ## Install the git hooks in .githooks (run once per clone)
 
 # --- run -------------------------------------------------------------------
 
-up-node: ## Bring up the stack on the NestJS backend
+up-infra: ## Data layer + gateway only — no application images needed
+	$(COMPOSE) up -d postgres redis flyway gateway
+
+up-node: ## Bring up the stack on the NestJS backend (needs apps/api-node built)
+	@test -f apps/api-node/Dockerfile || { 	  echo "apps/api-node has no Dockerfile yet - that is task 2.8."; 	  echo "For the data layer and gateway right now: make up-infra"; exit 1; }
 	BACKEND_HOST=api-node BACKEND_PORT=3000 $(COMPOSE) --profile node up -d --build
 
-up-java: ## Bring up the stack on the Spring Boot backend
+up-java: ## Bring up the stack on the Spring Boot backend (needs apps/api-java built)
+	@test -f apps/api-java/Dockerfile || { 	  echo "apps/api-java has no Dockerfile yet - that is task 5.1."; 	  echo "For the data layer and gateway right now: make up-infra"; exit 1; }
 	BACKEND_HOST=api-java BACKEND_PORT=8080 $(COMPOSE) --profile java up -d --build
 
 down: ## Stop everything (keeps the database volume)
-	$(COMPOSE) --profile node --profile java down
+	$(COMPOSE) --profile node --profile java --profile web down
 
 clean: ## Stop everything and wipe the database volume (next up re-seeds)
-	$(COMPOSE) --profile node --profile java down -v
+	$(COMPOSE) --profile node --profile java --profile web down -v
 
 logs: ## Tail logs from every running service
 	$(COMPOSE) logs -f --tail=100

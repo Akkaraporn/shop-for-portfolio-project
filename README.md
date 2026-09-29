@@ -8,11 +8,12 @@ contract test suite runs against both and reports whether they agree.
 
 ```bash
 cp .env.example .env
-make up-node     # http://localhost:8080 — gateway -> NestJS
-make up-java     # same store, same URL, gateway -> Spring Boot
+make up-infra    # Postgres + Redis + Flyway + gateway — works today
+make up-node     # http://localhost:8080 — gateway -> NestJS        (from task 2.8)
+make up-java     # same store, same URL, gateway -> Spring Boot     (from task 5.1)
 ```
 
-Nothing in the browser changes between those two commands. `GET /api/v1/health`
+Nothing in the browser changes between the last two commands. `GET /api/v1/health`
 is the only way to tell which implementation answered.
 
 ## Why two backends
@@ -60,8 +61,13 @@ proves the constraints reject what they claim to, by trying to break each one.
 Demo accounts, all with the password `DemoPass123!`:
 `admin@vibecode.shop` (admin), `somchai@example.com`, `pimchanok@example.com`.
 
+Phase 1 is complete. The infrastructure runs: `make up-infra` brings up Postgres,
+Redis, Flyway and the nginx gateway, all reporting healthy, and the backend swap
+is already proven — pointing `BACKEND_HOST` at a different upstream changes which
+implementation answers `/api/v1/health` with no client change at all.
+
 Next: the NestJS implementation (Phase 2). No backend code exists yet, so
-`make up-node` currently brings up Postgres, Redis, Flyway and the gateway only.
+`make up-node` tells you to use `make up-infra` instead of failing obscurely.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:
