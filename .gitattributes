@@ -1,0 +1,13 @@
+# .editorconfig asks for LF; this makes git enforce it rather than rewriting
+# line endings on checkout, which would otherwise break the canonical request
+# hash the moment anyone commits a fixture from Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.jar binary
