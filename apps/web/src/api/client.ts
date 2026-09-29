@@ -64,6 +64,12 @@ export interface ClientHooks {
   headers?: () => Record<string, string>;
   /** Sees every response, e.g. to store a rotated X-Cart-Token. */
   onResponse?: (response: Response) => void;
+  /**
+   * Called on a 401. Resolves true when a fresh access token is now available, and the
+   * request is retried once with it. Never called for `/auth/*`: a 401 from login or
+   * refresh is the answer, not a reason to refresh.
+   */
+  onUnauthorized?: () => Promise<boolean>;
 }
 
 let hooks: ClientHooks = {};
@@ -83,6 +89,24 @@ export interface RequestOptions {
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const response = await send(path, options);
+
+  if (
+    response.status === 401 &&
+    !path.startsWith('/auth/') &&
+    hooks.onUnauthorized &&
+    (await hooks.onUnauthorized())
+  ) {
+    // One retry, with the headers rebuilt so the new access token is used. A second
+    // 401 falls through as an ordinary error: looping would hammer the API with a
+    // token it has just rejected.
+    return parse<T>(await send(path, options));
+  }
+
+  return parse<T>(response);
+}
+
+async function send(path: string, options: RequestOptions): Promise<Response> {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
 
   for (const [key, value] of Object.entries(options.query ?? {})) {
@@ -115,7 +139,10 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   hooks.onResponse?.(response);
+  return response;
+}
 
+async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new ProblemError(await readProblem(response));
   }
