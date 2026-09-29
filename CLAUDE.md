@@ -176,6 +176,24 @@ same hash in both languages.
 - **Canonicalise with `canonicalJson`, never `JSON.stringify`.** One escaper is shared
   with the cursor codec so there is one thing for Java to match.
 
+## Orders and payments conventions
+
+- **Confirm moves nothing.** It marks the payment `processing` and schedules the
+  provider callback. The webhook is the only thing that decrements `stock_on_hand`.
+  Collapsing the two leaves the webhook path untested and breaks the day a real
+  provider is plugged in.
+- **Settling decrements `stock_on_hand` *and* `stock_reserved`** by the same amount.
+  Only the first leaves units reserved forever; only the second gives stock back while
+  selling it.
+- **The webhook answers 200 for everything** except a signature that fails to verify.
+- **Verify the HMAC over `req.rawBody`**, never a re-serialised body. `rawBody: true`
+  must be passed to `NestFactory.create` — and to `createNestApplication` in any test
+  that exercises the webhook, or it fails closed and every delivery 401s.
+- **Cancel is idempotent** (200 on an already-cancelled order) but a paid order is a
+  genuine 409: that would be a refund.
+- **Everything that releases or commits a reservation sorts variant locks the same
+  way** as checkout — cancel, the sweeper, and the webhook all do (ADR-004).
+
 ## Cart conventions
 
 - **Resolution order is fixed**: a valid access token wins and `X-Cart-Token` is
@@ -197,7 +215,9 @@ same hash in both languages.
 
 `npm test` runs the unit and in-process HTTP suites and needs nothing. The
 integration suites (`*.integration-spec.ts`, via `npm run test:integration`) need a
-live database — `make up-infra` first — and skip loudly without one. Anything that is
+live database — `make up-infra` first — and skip loudly without one. They run
+`--runInBand`: they share one database and mutate the same seeded stock rows, so in
+parallel they race each other. Anything that is
 genuinely a database behaviour belongs there: a double would only prove the double
 works.
 

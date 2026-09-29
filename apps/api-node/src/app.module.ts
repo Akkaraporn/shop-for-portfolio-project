@@ -5,6 +5,8 @@ import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { CheckoutModule } from './checkout/checkout.module';
+import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { LoggerModule } from './common/logging/logger.module';
@@ -26,7 +28,7 @@ import { RedisModule } from './infra/redis/redis.module';
  * Authentication being global means an endpoint is protected unless it opts out
  * with @Public() or @OptionalAuth(), so a forgotten annotation fails closed.
  *
- * Remaining feature modules (orders, payments, admin) arrive with tasks 2.6 and 2.7.
+ * The admin module arrives with task 2.7.
  */
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { RedisModule } from './infra/redis/redis.module';
     CatalogModule,
     CartModule,
     CheckoutModule,
+    OrdersModule,
+    PaymentsModule,
     HealthModule,
   ],
   providers: [

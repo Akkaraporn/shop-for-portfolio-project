@@ -81,7 +81,11 @@ And checkout, which is the point of the whole exercise: an idempotency key that
 replays across a backend swap, variant locking that survives twenty people going for
 the last unit, and a 409 that names every short line at once.
 
-268 tests — 162 that need nothing, and 106 that run against a live PostgreSQL 16
+And the purchase completes: order history, cancellation that returns stock, and a
+mock provider that posts a real signed webhook back — the only thing in the system
+that decrements stock.
+
+298 tests — 162 that need nothing, and 136 that run against a live PostgreSQL 16
 because what they check (the recursive category CTE, keyset pagination, trigram
 search, row locking under real concurrency) is database behaviour a test double could
 not prove.

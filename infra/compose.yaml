@@ -83,6 +83,10 @@ services:
       REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
       PAYMENT_MOCK_DELAY_MS: ${PAYMENT_MOCK_DELAY_MS:-2000}
+      # The mock provider posts a real, signed HTTP callback back to this container,
+      # so the webhook runs through the same signature check and parser an external
+      # provider would hit.
+      SELF_BASE_URL: http://127.0.0.1:3000
       CURRENCY: ${CURRENCY:-THB}
       SHIPPING_FLAT_CENTS: ${SHIPPING_FLAT_CENTS:-5000}
       RESERVATION_TTL_MINUTES: ${RESERVATION_TTL_MINUTES:-15}

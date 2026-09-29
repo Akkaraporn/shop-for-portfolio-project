@@ -36,6 +36,13 @@ export const envSchema = z.object({
 
   PAYMENT_WEBHOOK_SECRET: z.string().min(8),
   PAYMENT_MOCK_DELAY_MS: z.coerce.number().int().nonnegative().default(2000),
+  /**
+   * Where the mock provider posts its callbacks. It makes a real HTTP request back
+   * to this service, so the webhook goes through the same signature check, parser and
+   * deduplication an external provider would hit — calling the handler in-process
+   * would exercise none of those.
+   */
+  SELF_BASE_URL: z.string().min(1).default('http://127.0.0.1:3000'),
 
   // One currency, deliberately (ADR-002 and the contract's preamble). A literal
   // rather than a string, so setting it to anything else fails at boot instead

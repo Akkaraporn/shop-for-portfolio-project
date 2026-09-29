@@ -109,7 +109,7 @@ built — not reverse-engineered from TypeScript two phases later.
 | 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) ✅ | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
 | 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) ✅ | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
 | 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) ✅ | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
-| 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) | High | 15h | Same webhook delivered five times decrements stock once |
+| 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) ✅ | High | 15h | Same webhook delivered five times decrements stock once |
 | 2.7 | [Admin: products, inventory delta, order status machine](https://app.clickup.com/t/z8v9xnfz5w) | Normal | 9h | `delta: -999` → 409; customer token → 403 |
 | 2.8 | [Dockerize + unit tests for the hard parts](https://app.clickup.com/t/z8v9xnfz5x) | High | 9h | `make clean && make up-node` from a clean tree serves every endpoint |
 
@@ -252,6 +252,31 @@ one response, not just the first. And `POST /payments/{id}/confirm` marks the
 payment `processing` and nothing more — stock is decremented by the webhook, the
 way a real provider works. Collapsing that asymmetry means the webhook path
 never gets tested.
+
+### What 2.6 settled
+
+The asymmetry the task insists on is now demonstrable rather than asserted. Confirming
+a payment marks it `processing` and moves **nothing**; only the webhook decrements
+stock. Verified live: confirm left `on_hand=16 reserved=2` untouched, then the mock
+provider's own two-second timer fired a genuine signed HTTP callback to
+`/webhooks/payment` and the order became `paid` with `on_hand=14 reserved=0`.
+
+The provider makes a **real HTTP request back to the service** rather than calling the
+handler in process. Calling in process would be simpler and would exercise none of the
+things that actually break: the HMAC over the raw bytes, the JSON parse, the dedupe.
+
+Deduplication is the unique index on `(provider, event_id)` with
+`ON CONFLICT DO NOTHING` — the same event delivered five times is acknowledged five
+times and applied once, asserted directly against `stock_on_hand`.
+
+The webhook answers **200 for everything** except a signature that does not verify:
+applied, duplicate, unknown event type, unknown payment, and even an event that could
+not be processed. A non-2xx makes a real provider retry forever for something that
+will fail identically.
+
+One test-infrastructure change: integration suites now run with `--runInBand`. They
+share one database and mutate the same seeded stock rows, so in parallel they raced
+each other — two suites' stock assertions failed together while each passed alone.
 
 ## Phase 3 — React Frontend
 
