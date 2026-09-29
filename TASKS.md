@@ -317,7 +317,7 @@ each other — two suites' stock assertions failed together while each passed al
 | 3.2 | [Auth store, refresh interceptor, guest cart token](https://app.clickup.com/t/z8v9xnfz63) ✅ | High | — | — |
 | 3.3 | [Catalog, product detail, cart pages](https://app.clickup.com/t/z8v9xnfz67) ✅ | High | — | — |
 | 3.4 | ⭐ [Checkout flow: form, idempotency key, payment, confirmation](https://app.clickup.com/t/z8v9xnfz69) ✅ | Urgent | — | — |
-| 3.5 | [Admin UI + error handling + dockerize web](https://app.clickup.com/t/z8v9xnfz6a) | Normal | — | — |
+| 3.5 | [Admin UI + error handling + dockerize web](https://app.clickup.com/t/z8v9xnfz6a) ✅ | Normal | — | — |
 
 ### What 3.0 settled
 
@@ -386,7 +386,7 @@ real Chromium against the real backend — 10 tests, including every task's DoD.
 - **Contract gap:** there is no way to know the shipping fee before the order exists,
   so checkout says it will be shown after confirming. Parked in `docs/future.md`.
 
-### What 3.5 settled (partly — the admin UI waits on 2.7)
+### What 3.5 settled
 
 - **`make up-node` serves the whole shop at http://localhost:8080** — the built app
   behind nginx, no dev server. The e2e suite passes there too:
@@ -399,8 +399,18 @@ real Chromium against the real backend — 10 tests, including every task's DoD.
   English `title`. Two pages that checked `status === 404` now check the type.
 - A route-level error boundary sits inside the layout, so a page that crashes leaves
   the header and basket usable.
-- **Not built: the admin UI.** Its API (task 2.7) was never implemented, and both are
-  named as the first cuts. Doing them means 2.7 first, then the admin pages.
+- **The admin UI renders its order buttons from a 409.** It asks to move an order to
+  the status it already has, which is never a transition, so the server answers
+  `invalid-transition` with no side effect and lists the reachable states. A racing
+  admin's click gets the new list in its own 409. There is no copy of the machine in
+  the frontend.
+- Stock controls send ±1 or a typed signed delta with a reason, never the number on
+  screen. Product and variants are created in one form, as the contract creates them;
+  editing changes the product only, since `PATCH` does not touch variants.
+- `AdminProduct`'s `allOf` renders its variants as an array intersection, like
+  `Page`; it is narrowed once in `admin-hooks.ts`, exactly as `Paged<T>` is.
+- The e2e suite gained five admin tests; all 15 pass against the built image from a
+  wiped volume.
 
 The iron rule from 3.1: **never hand-write an API type.** Import from
 `@/api/schema`. A hand-written interface throws away the entire benefit of

@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router';
+import { createBrowserRouter, Navigate } from 'react-router';
 
 import { EmptyState } from '@/components/state/empty-state';
 import { RequireAuth } from '@/auth/require-auth';
@@ -11,6 +11,14 @@ import { Layout } from '@/routes/layout';
 import { OrderPage, OrdersPage } from '@/routes/orders';
 import { ProductPage } from '@/routes/product';
 import { RootError, RouteError } from '@/routes/route-error';
+import { AdminInventoryPage } from '@/routes/admin/admin-inventory';
+import { AdminLayout } from '@/routes/admin/admin-layout';
+import { AdminOrdersPage } from '@/routes/admin/admin-orders';
+import {
+  AdminProductEditPage,
+  AdminProductNewPage,
+  AdminProductsPage,
+} from '@/routes/admin/admin-products';
 
 function NotFound() {
   return (
@@ -61,6 +69,18 @@ export const router = createBrowserRouter([
                 <OrderPage />
               </RequireAuth>
             ),
+          },
+          {
+            path: 'admin',
+            element: <AdminLayout />,
+            children: [
+              { index: true, element: <Navigate to="/admin/orders" replace /> },
+              { path: 'orders', element: <AdminOrdersPage /> },
+              { path: 'products', element: <AdminProductsPage /> },
+              { path: 'products/new', element: <AdminProductNewPage /> },
+              { path: 'products/:productId', element: <AdminProductEditPage /> },
+              { path: 'inventory', element: <AdminInventoryPage /> },
+            ],
           },
           { path: 'login', element: <LoginPage /> },
           { path: 'register', element: <RegisterPage /> },

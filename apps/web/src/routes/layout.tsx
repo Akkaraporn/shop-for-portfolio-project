@@ -1,4 +1,4 @@
-import { LogOut, Search, ShoppingBag, User } from 'lucide-react';
+import { LogOut, Search, ShoppingBag, Store, User } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router';
 
@@ -105,6 +105,14 @@ function Header({ onOpenCart }: { onOpenCart: () => void }) {
         <div className="ml-auto flex items-center gap-1 sm:ml-0">
           {session.status === 'signed-in' ? (
             <>
+              {session.user?.role === 'admin' ? (
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/admin/orders">
+                    <Store className="size-4" aria-hidden="true" />
+                    <span className="hidden sm:inline">หลังร้าน</span>
+                  </Link>
+                </Button>
+              ) : null}
               <Button variant="ghost" size="sm" asChild>
                 <Link to="/orders">
                   <User className="size-4" aria-hidden="true" />

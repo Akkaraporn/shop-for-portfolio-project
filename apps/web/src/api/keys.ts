@@ -17,4 +17,13 @@ export const keys = {
     all: ['orders'] as const,
     detail: (orderNumber: string) => ['orders', 'detail', orderNumber] as const,
   },
+  admin: {
+    productsAll: ['admin', 'products'] as const,
+    products: (status?: string) => ['admin', 'products', 'list', status ?? 'all'] as const,
+    product: (id: string) => ['admin', 'products', 'one', id] as const,
+    ordersAll: ['admin', 'orders'] as const,
+    orders: (status?: string) => ['admin', 'orders', 'list', status ?? 'all'] as const,
+    next: (orderNumber: string, status: string) =>
+      ['admin', 'orders', 'next', orderNumber, status] as const,
+  },
 };

@@ -21,7 +21,8 @@ E2E_BASE_URL=http://localhost:8080 npm run e2e   # same suite, against the built
 `make up-node` also builds this app into an nginx image and serves it through the
 gateway at http://localhost:8080 — no dev server needed.
 
-Demo account: `somchai@example.com` / `DemoPass123!`. Test cards are offered as buttons
+Demo accounts: `somchai@example.com` (shopper) and `admin@vibecode.shop` (back office
+at `/admin`), both `DemoPass123!`. Test cards are offered as buttons
 on the payment step: one succeeds, one is declined.
 
 Run the API alongside it:

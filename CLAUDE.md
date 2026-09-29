@@ -256,6 +256,9 @@ same hash in both languages.
   `isPending` — guards against a second submit in the same tick.
 - **Show errors with `describeError` or `<ErrorState error={…}>`**, which switch on the
   problem `type`. Never branch on `status` or message text — five problems share 409.
+- **The admin order queue asks the server what comes next** (`useNextStatuses`): a
+  same-status PATCH always 409s with the reachable states. Never add a status table to
+  the web app.
 - **`npm run e2e` in `apps/web`** drives Chromium against the live stack
   (`make up-node` first). Anything the shopper does belongs there.
 
