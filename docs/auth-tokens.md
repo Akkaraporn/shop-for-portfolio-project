@@ -149,9 +149,27 @@ and identical bodies with a 50ms tell defend nothing either.
   `password.service.spec.ts` (parameters and the seed hashes)
 - Java: task 5.4
 
-### Not yet verified
+### Verified under concurrency
 
-The `FOR UPDATE` behaviour under genuine concurrency. The Node suite substitutes
-persistence with an in-memory double, which cannot model row locking, so the
-concurrent-refresh case is untested. It needs a real Postgres and belongs with the
-concurrency tests in task 4.3.
+Ten simultaneous refreshes presenting the same token, against a real PostgreSQL 16
+through the compose stack:
+
+```
+1 x 200   one request rotated
+9 x 401   the rest lost the race
+```
+
+Afterwards the family held **zero** live tokens. That is worth dwelling on: the
+winner's brand-new token was revoked too, because each of the nine losers found the
+presented token already consumed, concluded reuse, and revoked the family — the
+replacement included.
+
+So the earlier warning is not theoretical. A client that fires two refreshes at once
+does not merely lose one of them; it loses the session entirely. Serialising
+refreshes behind a single in-flight promise is a hard requirement for task 3.2, not
+a nicety.
+
+The automated suite still substitutes persistence with an in-memory double, which
+cannot model row locking, so this specific case is covered by manual verification
+rather than by a test. Making it a repeatable test belongs with the concurrency work
+in task 4.3, which needs a live database anyway.

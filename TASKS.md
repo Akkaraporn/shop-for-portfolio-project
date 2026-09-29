@@ -147,6 +147,27 @@ it:
   When it has one the two must be merged, and that is `POST /carts/me/merge` in
   2.4; doing half of it here would put the same summing rule in two places.
 
+### Verified against a real database
+
+Docker Desktop failed during 2.1 and 2.2, so both were committed with their
+database-dependent claims flagged as unverified. Its `docker-desktop` WSL distro had
+become corrupted; unregistering it and letting Docker Desktop rebuild it restored
+builds. Everything then checked out:
+
+- The api-node image builds; `make up-node` brings up five services, all healthy,
+  and the container's own healthcheck passes.
+- **The seeded demo accounts log in.** The argon2id hashes written by
+  `V2__seed.sql` verify against the running application — seed, migration and auth
+  agree end to end.
+- The rotation chain and family revocation behave as specified, and a duplicate
+  registration returns 409 rather than 500 (the `P2002` translation works against
+  the real `lower(email)` index).
+- Guest-cart claiming moves `user_id`, `token_hash` and `expires_at` together, as
+  `carts_single_owner_check` requires.
+- All 22 schema constraint checks pass on the rebuilt database.
+- Ten concurrent refreshes of one token: exactly one succeeded, and the family was
+  left with **zero** live tokens — see `docs/auth-tokens.md`.
+
 **2.5 is the task the whole project exists for.** It is the one that gets asked
 about, and the one that makes this not a CRUD tutorial. Two rules from it bind
 Phase 5 exactly:

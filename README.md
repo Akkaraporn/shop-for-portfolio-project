@@ -71,7 +71,9 @@ configuration, an RFC 9457 exception filter that nothing escapes, pino logging
 correlated by request id, `/health` and `/ready`, the cursor codec — and auth:
 argon2id, a login that leaks neither timing nor which addresses are registered, and
 refresh-token rotation that revokes a whole token family when a consumed token is
-replayed. 115 tests, no database needed to run them.
+replayed. 115 tests, no database needed to run them — and verified against a live
+PostgreSQL 16 through the compose stack, where the seeded demo accounts really do
+log in.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:
