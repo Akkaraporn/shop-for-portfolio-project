@@ -23,3 +23,10 @@ to revisit it. An entry here is evidence of a decision, not a backlog.
 ## Parked notes
 
 <!-- Append below. Date each entry. Do not act on them. -->
+
+- **2026-09-30 — no shipping quote before checkout.** The contract exposes the flat
+  shipping fee only on a created `Order`, so the checkout page cannot show a grand total
+  before the shopper confirms. Options: a `shippingCents` field on `Cart`, or a
+  `GET /checkout/quote`. Either is a contract change in two backends; the UI states the
+  fee will appear after confirming instead. Hardcoding ฿50 in the frontend was rejected:
+  it would silently drift from `SHIPPING_FLAT_CENTS`.

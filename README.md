@@ -90,7 +90,17 @@ line-heights that do not clip tone marks, a deliberately small palette whose con
 is asserted arithmetically rather than eyeballed, shadcn components, and the
 loading/empty/error states most portfolios skip.
 
-331 tests — 195 that need nothing, and 136 that run against a live PostgreSQL 16
+**The shop now works in a browser**: browse, search in Thai, fill a basket as a guest,
+register without losing it, check out, pay with a test card, and watch the order turn
+paid when the provider's webhook lands. Run `make up-node`, then `npm run dev` in
+`apps/web` and open http://localhost:5173.
+
+The web app adds 72 unit tests and 10 end-to-end tests that drive a real Chromium
+through that whole journey — including five simultaneous checkout submits producing
+one order, two shoppers racing for the last unit, and two tabs refreshing a session at
+the same instant.
+
+Backend: 298 tests — 162 that need nothing, and 136 that run against a live PostgreSQL 16
 because what they check (the recursive category CTE, keyset pagination, trigram
 search, row locking under real concurrency) is database behaviour a test double could
 not prove.

@@ -1,11 +1,14 @@
 import { createBrowserRouter } from 'react-router';
 
 import { EmptyState } from '@/components/state/empty-state';
+import { RequireAuth } from '@/auth/require-auth';
 import { DesignSystem } from '@/design-system';
 import { LoginPage, RegisterPage } from '@/routes/auth-pages';
 import { CartPage } from '@/routes/cart';
 import { CatalogPage } from '@/routes/catalog';
+import { CheckoutPage } from '@/routes/checkout';
 import { Layout } from '@/routes/layout';
+import { OrderPage, OrdersPage } from '@/routes/orders';
 import { ProductPage } from '@/routes/product';
 
 function NotFound() {
@@ -27,6 +30,10 @@ export const router = createBrowserRouter([
       { index: true, element: <CatalogPage /> },
       { path: 'products/:slug', element: <ProductPage /> },
       { path: 'cart', element: <CartPage /> },
+      // An order belongs to a user, so checkout and everything after it require one.
+      { path: 'checkout', element: <RequireAuth><CheckoutPage /></RequireAuth> },
+      { path: 'orders', element: <RequireAuth><OrdersPage /></RequireAuth> },
+      { path: 'orders/:orderNumber', element: <RequireAuth><OrderPage /></RequireAuth> },
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
       { path: '*', element: <NotFound /> },

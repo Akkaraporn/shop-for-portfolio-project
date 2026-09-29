@@ -284,9 +284,9 @@ each other — two suites' stock assertions failed together while each passed al
 | --- | --- | --- | --- | --- |
 | 3.0 | 🎨 [Design foundation: tokens, Thai font, component library, wireframes](https://app.clickup.com/t/z8v9xnfz7v) ✅ | High | 12h | Tokens in `tailwind.config.ts`, shadcn themed, four wireframes, Thai vowels not clipped |
 | 3.1 | [Scaffold + generated API client + query layer](https://app.clickup.com/t/z8v9xnfz61) ✅ | High | 8h | Change a field in `openapi.yaml` → `make gen-client` → `tsc` points at every use |
-| 3.2 | [Auth store, refresh interceptor, guest cart token](https://app.clickup.com/t/z8v9xnfz63) | High | — | — |
-| 3.3 | [Catalog, product detail, cart pages](https://app.clickup.com/t/z8v9xnfz67) | High | — | — |
-| 3.4 | ⭐ [Checkout flow: form, idempotency key, payment, confirmation](https://app.clickup.com/t/z8v9xnfz69) | Urgent | — | — |
+| 3.2 | [Auth store, refresh interceptor, guest cart token](https://app.clickup.com/t/z8v9xnfz63) ✅ | High | — | — |
+| 3.3 | [Catalog, product detail, cart pages](https://app.clickup.com/t/z8v9xnfz67) ✅ | High | — | — |
+| 3.4 | ⭐ [Checkout flow: form, idempotency key, payment, confirmation](https://app.clickup.com/t/z8v9xnfz69) ✅ | Urgent | — | — |
 | 3.5 | [Admin UI + error handling + dockerize web](https://app.clickup.com/t/z8v9xnfz6a) | Normal | — | — |
 
 ### What 3.0 settled
@@ -332,6 +332,29 @@ body, with the slug and `traceId`) or `NetworkError`. Only the second is retried
 a 4xx sends the same bad request again, and a 5xx from this API needs a traceId, not
 repetition. Mutations are never retried automatically; checkout's safety comes from
 its Idempotency-Key.
+
+### What 3.2–3.4 settled
+
+**The shop is usable in a browser.** Guest browses, fills a basket, registers, keeps
+the basket, checks out, pays with a test card, and watches the order turn `paid` when
+the provider's webhook lands. `apps/web/e2e/shop.spec.ts` drives exactly that in a
+real Chromium against the real backend — 10 tests, including every task's DoD.
+
+- **Refresh across tabs.** The task's shared promise dedupes refreshes within a tab,
+  but its DoD is two tabs at once, and a per-tab promise cannot see the other tab. A
+  Web Lock serialises rotation across tabs, and the refresh token is re-read *inside*
+  the lock so a waiting tab presents the rotated token, not the consumed one.
+- **The idempotency key is created when the checkout page mounts**, never per click.
+- **Bug found by e2e:** five submits in one tick created one order (the key worked) but
+  left the shopper on an empty-cart page. TanStack reports only the latest `mutate()`,
+  and that one got `409 checkout-in-progress`. Fixed with a synchronous ref guard, and
+  a `checkout-in-progress` response now retries the same key until it replays.
+- **Bug found by e2e:** after a reload, a signed-in shopper's basket was fetched as a
+  guest before the session was restored — creating a throwaway guest basket and
+  flashing "your basket is empty". User-scoped queries now wait for the session and
+  the cart is keyed by user. A regression test fails without the fix.
+- **Contract gap:** there is no way to know the shipping fee before the order exists,
+  so checkout says it will be shown after confirming. Parked in `docs/future.md`.
 
 The iron rule from 3.1: **never hand-write an API type.** Import from
 `@/api/schema`. A hand-written interface throws away the entire benefit of

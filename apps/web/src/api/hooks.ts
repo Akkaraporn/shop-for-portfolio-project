@@ -6,6 +6,8 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
+import { useSession } from '@/auth/session';
+
 import { apiFetch, type Paged, type Schemas } from './client';
 import { keys } from './keys';
 import type { paths } from './schema';
@@ -55,10 +57,29 @@ export function useProduct(slug: string) {
 
 // --- cart --------------------------------------------------------------------------
 
+/**
+ * Whose basket is being asked for.
+ *
+ * Keyed by user so signing in or out fetches the right basket instead of showing the
+ * previous one, and held until the session is known. Without that hold, the first
+ * render after a reload asked as a guest — before bootstrap had restored the access
+ * token — which created a throwaway guest basket, stored its token, and flashed
+ * "your basket is empty" at a signed-in shopper. Found by the e2e suite.
+ */
+function useCartIdentity() {
+  const session = useSession();
+  return {
+    ready: session.status !== 'unknown',
+    key: [...keys.cart.all, session.user?.id ?? 'guest'] as const,
+  };
+}
+
 export function useCart() {
+  const identity = useCartIdentity();
   return useQuery({
-    queryKey: keys.cart.all,
+    queryKey: identity.key,
     queryFn: ({ signal }) => apiFetch<Schemas['Cart']>('/carts/me', { signal }),
+    enabled: identity.ready,
     // Prices are live and stock moves. A basket that is 30 seconds stale is a basket
     // that promises the wrong total.
     staleTime: 0,
@@ -68,9 +89,10 @@ export function useCart() {
 /** Every cart mutation returns the whole basket, so the cache is set, not refetched. */
 function useCartMutation<TVars>(request: (vars: TVars) => Promise<Schemas['Cart']>) {
   const queryClient = useQueryClient();
+  const identity = useCartIdentity();
   return useMutation({
     mutationFn: request,
-    onSuccess: (cart) => queryClient.setQueryData(keys.cart.all, cart),
+    onSuccess: (cart) => queryClient.setQueryData(identity.key, cart),
   });
 }
 

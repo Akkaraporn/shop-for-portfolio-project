@@ -10,10 +10,16 @@ npm test            # design-token guards
 npm run typecheck
 ```
 
-`npm run dev` currently renders the **design system** — every token, component and
-non-happy-path state on one page. That is deliberate: the tokens get looked at before
-anything is built on them, and the page stays afterwards as the place to check a
-token change.
+`npm run dev` serves the shop at http://localhost:5173. The design system — every
+token, component and non-happy-path state on one page — stays at `/design`, as the
+place to check a token change.
+
+```bash
+npm run e2e          # Chromium through the whole purchase; needs `make up-node`
+```
+
+Demo account: `somchai@example.com` / `DemoPass123!`. Test cards are offered as buttons
+on the payment step: one succeeds, one is declined.
 
 Run the API alongside it:
 

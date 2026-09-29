@@ -10,12 +10,13 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --dir src",
     "gen:api": "openapi-typescript ../../contract/openapi.yaml -o src/api/schema.d.ts",
     "predev": "npm run gen:api --silent",
     "prebuild": "npm run gen:api --silent",
     "pretypecheck": "npm run gen:api --silent",
-    "pretest": "npm run gen:api --silent"
+    "pretest": "npm run gen:api --silent",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans-thai": "^5.3.0",
@@ -31,6 +32,7 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.10.0",
     "@types/react": "^19.3.0",

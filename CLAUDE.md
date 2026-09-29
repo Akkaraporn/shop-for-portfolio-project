@@ -231,6 +231,20 @@ same hash in both languages.
 - **Vite proxies `/api` to the gateway in development**, so the browser sees one
   origin exactly as it does in production. No CORS is configured anywhere.
 
+## Frontend session and checkout
+
+- **Access token in memory, refresh token in localStorage** (a stated demo trade-off —
+  production wants an httpOnly cookie). Only `src/auth/session.ts` touches them.
+- **Never refresh concurrently**, in a tab or across tabs: `refresh()` shares one
+  promise and holds a Web Lock, re-reading the token inside it. Two overlapping
+  refreshes revoke the whole token family server-side.
+- **User-scoped queries wait for `session.status !== 'unknown'`** and are keyed by user,
+  or a reload asks as a guest before the session is restored.
+- **The Idempotency-Key is created when the checkout page mounts**, and a ref — not
+  `isPending` — guards against a second submit in the same tick.
+- **`npm run e2e` in `apps/web`** drives Chromium against the live stack
+  (`make up-node` first). Anything the shopper does belongs there.
+
 ## Testing
 
 `npm test` runs the unit and in-process HTTP suites and needs nothing. The
