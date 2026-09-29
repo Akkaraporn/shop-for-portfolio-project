@@ -1,3 +1,4 @@
+import { canonicalString } from '../canonical/canonical-json';
 import { Problems } from '../problem/problem.exception';
 
 /**
@@ -41,7 +42,9 @@ export interface CursorPayload {
 }
 
 export function encodeCursor(payload: CursorPayload): string {
-  const json = `{"v":${jsonString(payload.sortValue)},"i":${jsonString(payload.id)}}`;
+  // canonicalString is shared with the idempotency hash, so the codebase has exactly
+  // one JSON string escaper and the Java side has exactly one to match.
+  const json = `{"v":${canonicalString(payload.sortValue)},"i":${canonicalString(payload.id)}}`;
   return Buffer.from(json, 'utf8').toString('base64url');
 }
 
@@ -73,57 +76,6 @@ export function decodeCursor(cursor: string): CursorPayload {
 
   const { v, i } = parsed as { v: string; i: string };
   return { sortValue: v, id: i };
-}
-
-/**
- * Serialises one JSON string, minimally and deterministically.
- *
- * Escapes only what RFC 8259 requires: the quote, the backslash, and the C0
- * control characters — the five with short forms as those, the rest as `\u00xx`
- * with lowercase hex. Everything else, including all non-ASCII, is emitted as raw
- * UTF-8. Java's equivalent is in `docs/cursor-format.md`.
- */
-function jsonString(value: string): string {
-  let out = '"';
-
-  for (const char of value) {
-    const code = char.codePointAt(0)!;
-
-    switch (char) {
-      case '"':
-        out += '\\"';
-        continue;
-      case '\\':
-        out += '\\\\';
-        continue;
-      case '\b':
-        out += '\\b';
-        continue;
-      case '\f':
-        out += '\\f';
-        continue;
-      case '\n':
-        out += '\\n';
-        continue;
-      case '\r':
-        out += '\\r';
-        continue;
-      case '\t':
-        out += '\\t';
-        continue;
-      default:
-        break;
-    }
-
-    if (code < 0x20) {
-      out += `\\u${code.toString(16).padStart(4, '0')}`;
-      continue;
-    }
-
-    out += char;
-  }
-
-  return `${out}"`;
 }
 
 /** What a list endpoint returns, matching the contract's `Page` envelope. */

@@ -108,7 +108,7 @@ built — not reverse-engineered from TypeScript two phases later.
 | 2.2 | [Auth: register, login, JWT guard, refresh rotation](https://app.clickup.com/t/z8v9xnfz5g) ✅ | High | 13h | Reusing a rotated refresh token revokes the whole token family |
 | 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) ✅ | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
 | 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) ✅ | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
-| 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
+| 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) ✅ | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
 | 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) | High | 15h | Same webhook delivered five times decrements stock once |
 | 2.7 | [Admin: products, inventory delta, order status machine](https://app.clickup.com/t/z8v9xnfz5w) | Normal | 9h | `delta: -999` → 409; customer token → 403 |
 | 2.8 | [Dockerize + unit tests for the hard parts](https://app.clickup.com/t/z8v9xnfz5x) | High | 9h | `make clean && make up-node` from a clean tree serves every endpoint |
@@ -208,7 +208,35 @@ finds out at checkout, which is where the 409 belongs. Merging likewise does **n
 stock-check: signing in must never lose a basket because something sold out in the
 meantime.
 
-**2.5 is the task the whole project exists for.** It is the one that gets asked
+### What 2.5 settled
+
+`docs/idempotency.md` specifies the canonical hash, ADR-004 the lock ordering, ADR-005
+the key design. The measured results, against a real PostgreSQL:
+
+- **20 concurrent checkouts on one unit → exactly one 201 and nineteen 409s**, with
+  `stock_reserved = 1` and one held reservation afterwards. The task's definition of
+  done, demonstrated rather than argued.
+- **12 shoppers whose baskets share two variants in opposite orders → all 12 succeed,
+  zero 5xx.** Without ascending-id lock ordering that is the classic deadlock, and
+  PostgreSQL would kill one transaction — surfacing as a 500, not a 409.
+- **8 concurrent retries of one key → one order number**, the rest 409
+  `checkout-in-progress`.
+
+Two decisions worth knowing before porting:
+
+- Variants are locked **one row at a time** in sorted order, not with
+  `WHERE id = ANY(...) ORDER BY id FOR UPDATE`. That single-query form looks
+  equivalent but PostgreSQL does not guarantee rows are *locked* in the order they are
+  returned, so the planner may reintroduce the deadlock under exactly the concurrency
+  this protects against (ADR-004).
+- The canonical hasher **omits object keys holding `undefined`**, matching
+  `JSON.stringify`. Not cosmetic: the hash is taken over the rebuilt DTO, and
+  `class-transformer` materialises absent optional fields as `undefined` properties —
+  without the rule, adding an optional field would change the fingerprint of every
+  request that omits it. Found by the first integration run, which 422'd on every
+  checkout.
+
+**2.5 was the task the whole project exists for.** It is the one that gets asked
 about, and the one that makes this not a CRUD tutorial. Two rules from it bind
 Phase 5 exactly:
 

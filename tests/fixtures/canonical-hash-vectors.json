@@ -1,0 +1,156 @@
+{
+  "$comment": "Shared canonical-hash vectors. Both implementations must reproduce every canonical string and every hash below exactly. Read by the Node suite (apps/api-node/src/common/canonical/canonical-json.spec.ts) and by the Java port (task 5.3). Algorithm specified in docs/idempotency.md. Regenerate with tests/fixtures/.gen-canonical-hash-vectors.mjs.",
+  "algorithm": "sha256(canonicalJson(body)) as lowercase hex; keys sorted recursively, no whitespace, integers only",
+  "vectors": [
+    {
+      "name": "empty-object",
+      "value": {},
+      "note": "The degenerate case. Both implementations must agree even here.",
+      "canonical": "{}",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "name": "flat-sorted",
+      "value": {
+        "a": "1",
+        "b": "2",
+        "c": "3"
+      },
+      "note": "Already in order; the baseline the next vector is compared against.",
+      "canonical": "{\"a\":\"1\",\"b\":\"2\",\"c\":\"3\"}",
+      "sha256": "4e75b6b87b799c6d1a635d57f9ffc03b5276f1953a18afc8a7d8eb459cd13a3f"
+    },
+    {
+      "name": "flat-unsorted",
+      "value": {
+        "c": "3",
+        "a": "1",
+        "b": "2"
+      },
+      "note": "Same content, different key order. MUST hash identically to flat-sorted — this is the entire purpose of canonicalisation.",
+      "canonical": "{\"a\":\"1\",\"b\":\"2\",\"c\":\"3\"}",
+      "sha256": "4e75b6b87b799c6d1a635d57f9ffc03b5276f1953a18afc8a7d8eb459cd13a3f"
+    },
+    {
+      "name": "nested-unsorted",
+      "value": {
+        "z": {
+          "y": "1",
+          "x": "2"
+        },
+        "a": [
+          {
+            "q": "1",
+            "p": "2"
+          }
+        ]
+      },
+      "note": "Sorting is recursive, and applies inside objects nested in arrays.",
+      "canonical": "{\"a\":[{\"p\":\"2\",\"q\":\"1\"}],\"z\":{\"x\":\"2\",\"y\":\"1\"}}",
+      "sha256": "6026de28b0b634341c7e8d0a1e12fbf4b004baf0cf2732d86ef6c6fd007d837d"
+    },
+    {
+      "name": "array-order-preserved",
+      "value": {
+        "items": [
+          "b",
+          "a",
+          "c"
+        ]
+      },
+      "note": "Arrays are sequences. Reordering them is a genuinely different request and must NOT hash the same.",
+      "canonical": "{\"items\":[\"b\",\"a\",\"c\"]}",
+      "sha256": "69b18dfccf7a868badaf0e37acd292455445775465f8e17eff6c605f205efa87"
+    },
+    {
+      "name": "integers",
+      "value": {
+        "zero": 0,
+        "negative": -42,
+        "large": 9007199254740991
+      },
+      "note": "Base 10, no plus sign, no decimal point. -0 would normalise to 0.",
+      "canonical": "{\"large\":9007199254740991,\"negative\":-42,\"zero\":0}",
+      "sha256": "74b05155848f4bfb39c0cebce27276f006077adfdb60a4ef2e55531d179811ad"
+    },
+    {
+      "name": "booleans-and-null",
+      "value": {
+        "t": true,
+        "f": false,
+        "n": null
+      },
+      "note": "null is preserved, not dropped.",
+      "canonical": "{\"f\":false,\"n\":null,\"t\":true}",
+      "sha256": "22e00dc2f7b01420f940fbdbfbdf34fa0667cc6500186495023ba37722cbd05e"
+    },
+    {
+      "name": "thai-address",
+      "value": {
+        "shippingAddress": {
+          "recipientName": "สมชาย ใจดี",
+          "line1": "123 ถนนสุขุมวิท",
+          "city": "กรุงเทพมหานคร",
+          "province": "กรุงเทพมหานคร",
+          "postalCode": "10110",
+          "country": "TH",
+          "phone": "0812345678"
+        },
+        "paymentMethod": "card"
+      },
+      "note": "The realistic case, and the one that breaks a serialiser configured to escape non-ASCII. Must be raw UTF-8.",
+      "canonical": "{\"paymentMethod\":\"card\",\"shippingAddress\":{\"city\":\"กรุงเทพมหานคร\",\"country\":\"TH\",\"line1\":\"123 ถนนสุขุมวิท\",\"phone\":\"0812345678\",\"postalCode\":\"10110\",\"province\":\"กรุงเทพมหานคร\",\"recipientName\":\"สมชาย ใจดี\"}}",
+      "sha256": "62aaf653af7e3a43a81408cd7b0fed71a23b01583fe48223b2b69ed765716189"
+    },
+    {
+      "name": "escapes",
+      "value": {
+        "quote": "a \"b\"",
+        "backslash": "a\\b",
+        "newline": "a\nb",
+        "tab": "a\tb"
+      },
+      "note": "Only the RFC 8259 escapes, and the short forms where they exist.",
+      "canonical": "{\"backslash\":\"a\\\\b\",\"newline\":\"a\\nb\",\"quote\":\"a \\\"b\\\"\",\"tab\":\"a\\tb\"}",
+      "sha256": "66c9bff36b5765b027a388beab7946955d1dd29dd26366a803a3dc2a63415b2e"
+    },
+    {
+      "name": "control-character",
+      "value": {
+        "bell": "\u0007"
+      },
+      "note": "A C0 control with no short form: \\u0007, lowercase hex.",
+      "canonical": "{\"bell\":\"\\u0007\"}",
+      "sha256": "c4a5660a808437b64dba47c7efa61723cc5c4cf405a1233aae664fab9e428cac"
+    },
+    {
+      "name": "emoji-key-and-value",
+      "value": {
+        "🧵": "thread 🧵"
+      },
+      "note": "Outside the BMP, in a key as well as a value. Per-code-unit iteration would split the surrogate pair.",
+      "canonical": "{\"🧵\":\"thread 🧵\"}",
+      "sha256": "3750eb6289c1d63ea111228486e1577fccd9679774a46b5e606730c3b68442f1"
+    },
+    {
+      "name": "realistic-checkout",
+      "value": {
+        "paymentMethod": "promptpay",
+        "note": "ฝากไว้หน้าบ้านได้เลยครับ",
+        "shippingAddress": {
+          "recipientName": "พิมพ์ชนก วงศ์สุวรรณ",
+          "phone": "0898765432",
+          "line1": "99/1 หมู่บ้านสวนหลวง",
+          "line2": "ซอย 5",
+          "city": "เมือง",
+          "province": "เชียงใหม่",
+          "postalCode": "50000",
+          "country": "TH"
+        }
+      },
+      "note": "A whole CheckoutRequest as a client would actually send it.",
+      "canonical": "{\"note\":\"ฝากไว้หน้าบ้านได้เลยครับ\",\"paymentMethod\":\"promptpay\",\"shippingAddress\":{\"city\":\"เมือง\",\"country\":\"TH\",\"line1\":\"99/1 หมู่บ้านสวนหลวง\",\"line2\":\"ซอย 5\",\"phone\":\"0898765432\",\"postalCode\":\"50000\",\"province\":\"เชียงใหม่\",\"recipientName\":\"พิมพ์ชนก วงศ์สุวรรณ\"}}",
+      "sha256": "088aca6954ada158eca8a30021bf63cad319f45b458e72cc5ea46a60cc2d76d7"
+    }
+  ]
+}

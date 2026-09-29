@@ -77,10 +77,14 @@ listing with four sorts, trigram search that works on Thai, and product detail.
 and the basket: guest baskets that survive registration, live pricing, and a merge
 that is safe to retry.
 
-195 tests — 115 that need nothing, and 80 that run against a live PostgreSQL 16
+And checkout, which is the point of the whole exercise: an idempotency key that
+replays across a backend swap, variant locking that survives twenty people going for
+the last unit, and a 409 that names every short line at once.
+
+268 tests — 162 that need nothing, and 106 that run against a live PostgreSQL 16
 because what they check (the recursive category CTE, keyset pagination, trigram
-search, the partial unique indexes behind one-basket-per-user) is database behaviour a
-test double could not prove.
+search, row locking under real concurrency) is database behaviour a test double could
+not prove.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:

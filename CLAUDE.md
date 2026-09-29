@@ -43,6 +43,8 @@ Until Phase 2 exists, `make up-infra` is the one to use.
 | `docs/cursor-format.md` | The cursor codec, byte for byte. Java ports from this. |
 | `docs/problem-types.md` | Every `type` URI and title. Part of the contract. |
 | `docs/auth-tokens.md` | JWT claims, refresh rotation, argon2 parameters. Java ports from this. |
+| `docs/idempotency.md` | The canonical request hash and the key state machine. |
+| `tests/fixtures/canonical-hash-vectors.json` | Shared hash vectors. Both backends must match. |
 | `tests/fixtures/cursor-vectors.json` | Shared vectors. Both backends must reproduce them. |
 | `docs/future.md` | What was deliberately not built. |
 
@@ -156,6 +158,23 @@ same hash in both languages.
   existed. Saying "exists but hidden" would leak the unpublished catalogue.
 - **Escape `%` and `_` in search terms.** They are `ILIKE` wildcards; unescaped, a
   search for `%` returns the entire catalogue.
+
+## Checkout conventions
+
+- **Lock variants one at a time, in ascending id order**, everywhere — checkout and the
+  sweeper both. `ORDER BY id FOR UPDATE` in one query does *not* guarantee lock order
+  (ADR-004). Compare ids as the canonical lowercase string (ADR-008).
+- **Nothing slow goes inside the checkout transaction.** It holds row locks; an HTTP
+  call to a provider in there would hold them for a network round trip. That is why
+  confirm is a separate request and the webhook fulfils the order.
+- **Only successful responses are replayed.** A failed attempt releases its key, so a
+  retry is a fresh attempt — `insufficient-stock` is transient and replaying a stale
+  409 would deny a shopper an item that is back in stock.
+- **The idempotency claim is its own transaction; the completion is inside the
+  checkout transaction.** Merging them breaks the claim (invisible until commit);
+  splitting the completion out breaks atomicity.
+- **Canonicalise with `canonicalJson`, never `JSON.stringify`.** One escaper is shared
+  with the cursor codec so there is one thing for Java to match.
 
 ## Cart conventions
 
