@@ -107,7 +107,7 @@ built — not reverse-engineered from TypeScript two phases later.
 | 2.1 | [Foundation: Prisma, Problem filter, logging, health, cursor codec](https://app.clickup.com/t/z8v9xnfz5d) ✅ | Urgent | 16h | Any error at all comes back as `problem+json`; no HTML error page can escape |
 | 2.2 | [Auth: register, login, JWT guard, refresh rotation](https://app.clickup.com/t/z8v9xnfz5g) ✅ | High | 13h | Reusing a rotated refresh token revokes the whole token family |
 | 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) ✅ | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
-| 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
+| 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) ✅ | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
 | 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
 | 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) | High | 15h | Same webhook delivered five times decrements stock once |
 | 2.7 | [Admin: products, inventory delta, order status machine](https://app.clickup.com/t/z8v9xnfz5w) | Normal | 9h | `delta: -999` → 409; customer token → 403 |
@@ -185,6 +185,28 @@ missed, and that archiving a row from page one does not shift page two.
 
 `npm test` excludes those and stays green without Docker; the integration suite skips
 loudly rather than failing when no database is reachable.
+
+### What 2.4 settled
+
+ADR-006 records why the basket is in Postgres rather than Redis, and the reason is
+specific to this project: in Redis a basket is whatever bytes the application chose,
+the contract cannot describe a format that never crosses the wire, and two backends
+could serialise it completely differently while both returning identical JSON. The
+divergence would surface only in the cross-backend test — the one place it could not
+be localised.
+
+Two things the tests caught:
+
+- Both cart `POST` endpoints were returning Nest's default **201** where the contract
+  says **200**. They return the updated basket, not a resource the client can address.
+- `@nestjs/schedule` v12 is ESM-only, like `@nestjs/jwt` before it. The sweeper is a
+  plain interval instead — it needed one timer, not a scheduling framework.
+
+Adding to a basket still **reserves nothing**, which is asserted directly:
+`stock_reserved` is untouched, and two shoppers can both hold the last unit. The loser
+finds out at checkout, which is where the 409 belongs. Merging likewise does **not**
+stock-check: signing in must never lose a basket because something sold out in the
+meantime.
 
 **2.5 is the task the whole project exists for.** It is the one that gets asked
 about, and the one that makes this not a CRUD tutorial. Two rules from it bind

@@ -1194,8 +1194,10 @@ components:
   headers:
     CartToken:
       description: >
-        The basket's guest token. Always sent; clients should store the latest
-        value, because an expired token is silently replaced with a new one.
+        The guest basket's token. Sent on every response for a guest basket, even
+        when unchanged, so a client only ever has to store the latest value it saw —
+        an expired or unrecognised token is silently replaced with a new one rather
+        than rejected. Omitted for a signed-in user's basket, which has no token.
       schema:
         type: string
     IdempotencyReplayed:

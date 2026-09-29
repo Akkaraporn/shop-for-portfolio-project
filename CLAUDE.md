@@ -157,6 +157,23 @@ same hash in both languages.
 - **Escape `%` and `_` in search terms.** They are `ILIKE` wildcards; unescaped, a
   search for `%` returns the entire catalogue.
 
+## Cart conventions
+
+- **Resolution order is fixed**: a valid access token wins and `X-Cart-Token` is
+  ignored (combining them is a merge, an explicit endpoint); otherwise the token names
+  a guest basket; otherwise one is created. An expired or unknown token yields a new
+  basket, never a 404.
+- **`X-Cart-Token` is sent on every guest response** and omitted for a user's basket.
+- **Adding to the basket reserves nothing.** It 409s when stock is short, but two
+  shoppers can both hold the last unit — reservation is checkout's job only.
+- **Merging does not stock-check.** Signing in must not lose the basket because
+  something sold out; checkout is where that becomes a 409 naming every short line.
+- **Claiming a guest basket moves `user_id`, `token_hash` and `expires_at` together**,
+  or `carts_single_owner_check` rejects the row.
+- **No ESM-only Nest side packages.** `@nestjs/jwt` and `@nestjs/schedule` are both
+  ESM at their current majors and unusable from a CommonJS build under Jest. Check
+  `npm view <pkg> type` before adding one.
+
 ## Testing
 
 `npm test` runs the unit and in-process HTTP suites and needs nothing. The

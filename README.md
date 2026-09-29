@@ -74,9 +74,13 @@ refresh-token rotation that revokes a whole token family when a consumed token i
 replayed. and the catalogue: a category tree cached in Redis, cursor-paginated product
 listing with four sorts, trigram search that works on Thai, and product detail.
 
-159 tests — 115 that need nothing, and 44 that run against a live PostgreSQL 16
+and the basket: guest baskets that survive registration, live pricing, and a merge
+that is safe to retry.
+
+195 tests — 115 that need nothing, and 80 that run against a live PostgreSQL 16
 because what they check (the recursive category CTE, keyset pagination, trigram
-search) is database behaviour a test double could not prove.
+search, the partial unique indexes behind one-basket-per-user) is database behaviour a
+test double could not prove.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:
