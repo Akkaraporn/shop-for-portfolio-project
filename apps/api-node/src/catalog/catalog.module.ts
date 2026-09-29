@@ -7,8 +7,8 @@ import { ProductsService } from './products.service';
 @Module({
   controllers: [CatalogController],
   providers: [CategoriesService, ProductsService],
-  // CategoriesService is exported so the admin module (task 2.7) can invalidate the
-  // cached tree when a category changes.
+  // CategoriesService is exported so the admin module can invalidate the cached tree,
+  // whose product counts change when a product is created, moved or archived.
   exports: [CategoriesService],
 })
 export class CatalogModule {}

@@ -209,33 +209,7 @@ export class ProductsService {
   async findBySlug(slug: string): Promise<ProductDetail> {
     const product = await this.prisma.products.findFirst({
       where: { slug, status: 'active' },
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        description: true,
-        status: true,
-        min_price_cents: true,
-        currency: true,
-        created_at: true,
-        categories: { select: { slug: true } },
-        product_variants: {
-          where: { is_active: true },
-          orderBy: [{ price_cents: 'asc' }, { position: 'asc' }],
-          select: {
-            id: true,
-            sku: true,
-            name: true,
-            price_cents: true,
-            stock_on_hand: true,
-            stock_reserved: true,
-          },
-        },
-        product_images: {
-          orderBy: { position: 'asc' },
-          select: { id: true, url: true, alt: true, position: true },
-        },
-      },
+      select: PRODUCT_DETAIL_SELECT,
     });
 
     // A draft or archived product is indistinguishable from one that never
@@ -245,40 +219,7 @@ export class ProductsService {
       throw Problems.notFound(`No product with slug '${slug}'.`);
     }
 
-    const variants = product.product_variants.map((variant) => ({
-      id: variant.id,
-      sku: variant.sku,
-      name: variant.name,
-      priceCents: Number(variant.price_cents),
-      currency: product.currency,
-      // Computed at read time, and advisory only. It may already be stale by the
-      // time this response is rendered; checkout re-verifies under a row lock.
-      // Never make a sell/no-sell decision from this value.
-      availableStock: variant.stock_on_hand - variant.stock_reserved,
-    }));
-
-    return {
-      id: product.id,
-      slug: product.slug,
-      name: product.name,
-      minPriceCents: Number(product.min_price_cents),
-      currency: product.currency,
-      inStock: variants.some((variant) => variant.availableStock > 0),
-      ...(product.product_images[0]
-        ? { imageUrl: product.product_images[0].url }
-        : {}),
-      categorySlug: product.categories.slug,
-      description: product.description,
-      status: product.status as ProductDetail['status'],
-      variants,
-      images: product.product_images.map((image) => ({
-        id: image.id,
-        url: image.url,
-        ...(image.alt ? { alt: image.alt } : {}),
-        position: image.position,
-      })),
-      createdAt: product.created_at,
-    };
+    return toProductDetail(product);
   }
 
   /** Exposed for the integration tests, which assert on cursor values directly. */
@@ -288,6 +229,81 @@ export class ProductsService {
       id: row.id,
     });
   }
+}
+
+/**
+ * Everything a product page needs, in one select. Shared with the admin module, which
+ * reads the same shape in any status and adds the raw stock columns — one mapping, so
+ * the customer and back-office views of a product cannot disagree about its fields.
+ */
+export const PRODUCT_DETAIL_SELECT = {
+  id: true,
+  slug: true,
+  name: true,
+  description: true,
+  status: true,
+  min_price_cents: true,
+  currency: true,
+  created_at: true,
+  category_id: true,
+  categories: { select: { slug: true } },
+  product_variants: {
+    where: { is_active: true },
+    orderBy: [{ price_cents: 'asc' }, { position: 'asc' }],
+    select: {
+      id: true,
+      sku: true,
+      name: true,
+      price_cents: true,
+      stock_on_hand: true,
+      stock_reserved: true,
+    },
+  },
+  product_images: {
+    orderBy: { position: 'asc' },
+    select: { id: true, url: true, alt: true, position: true },
+  },
+} satisfies Prisma.productsSelect;
+
+export type ProductDetailRow = Prisma.productsGetPayload<{
+  select: typeof PRODUCT_DETAIL_SELECT;
+}>;
+
+export function toProductDetail(product: ProductDetailRow): ProductDetail {
+  const variants = product.product_variants.map((variant) => ({
+    id: variant.id,
+    sku: variant.sku,
+    name: variant.name,
+    priceCents: Number(variant.price_cents),
+    currency: product.currency,
+    // Computed at read time, and advisory only. It may already be stale by the
+    // time this response is rendered; checkout re-verifies under a row lock.
+    // Never make a sell/no-sell decision from this value.
+    availableStock: variant.stock_on_hand - variant.stock_reserved,
+  }));
+
+  return {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    minPriceCents: Number(product.min_price_cents),
+    currency: product.currency,
+    inStock: variants.some((variant) => variant.availableStock > 0),
+    ...(product.product_images[0]
+      ? { imageUrl: product.product_images[0].url }
+      : {}),
+    categorySlug: product.categories.slug,
+    description: product.description,
+    status: product.status as ProductDetail['status'],
+    variants,
+    images: product.product_images.map((image) => ({
+      id: image.id,
+      url: image.url,
+      ...(image.alt ? { alt: image.alt } : {}),
+      position: image.position,
+    })),
+    createdAt: product.created_at,
+  };
 }
 
 function toSummary(row: ProductListRow): ProductSummary {

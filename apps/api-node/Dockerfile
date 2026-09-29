@@ -35,17 +35,36 @@ WORKDIR /app
 RUN apk add --no-cache openssl
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
+# @prisma/client declares the Prisma CLI and TypeScript as peers, and npm installs
+# a production package's peers even with --omit=dev (and --omit=peer does not
+# override that). The runtime only ever loads the generated client, so the CLI, its
+# engines and config loader — which pull in `effect` and `fast-check` — go (~150MB).
+RUN rm -rf node_modules/prisma node_modules/@prisma/engines \
+      node_modules/@prisma/fetch-engine node_modules/@prisma/get-platform \
+      node_modules/@prisma/config node_modules/effect node_modules/fast-check \
+      node_modules/typescript node_modules/.bin/prisma node_modules/.bin/tsc \
+      node_modules/.bin/tsserver
 # The generated client, from the stage that had the CLI to generate it.
 COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=deps /app/node_modules/@prisma/client ./node_modules/@prisma/client
+# The client ships a WebAssembly engine per database for edge runtimes. This one runs
+# on Node against PostgreSQL through the native library engine, so none are loaded.
+RUN find node_modules/@prisma/client/runtime node_modules/.prisma/client \
+      -name '*.wasm*' -delete \
+ && find node_modules/@prisma/client/runtime -name '*edge*' -delete
 
 # --- 4. runtime ------------------------------------------------------------
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
+# npm, npx and corepack are never run in this image, so they are removed: a package
+# manager is one less tool for an intruder. (It saves no space — they live in the base
+# layer — which is ~155MB of the image, 123MB of it the node binary itself.)
 RUN apk add --no-cache openssl \
  && addgroup -S app \
- && adduser -S app -G app
+ && adduser -S app -G app \
+ && rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+      /usr/local/bin/corepack /opt/yarn* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 ENV NODE_ENV=production \
     PORT=3000

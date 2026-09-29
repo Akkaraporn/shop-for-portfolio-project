@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -27,8 +28,7 @@ import { RedisModule } from './infra/redis/redis.module';
  * order is significant: JwtAuthGuard attaches the user, RolesGuard reads it.
  * Authentication being global means an endpoint is protected unless it opts out
  * with @Public() or @OptionalAuth(), so a forgotten annotation fails closed.
- *
- * The admin module arrives with task 2.7.
+
  */
 @Module({
   imports: [
@@ -42,6 +42,7 @@ import { RedisModule } from './infra/redis/redis.module';
     CheckoutModule,
     OrdersModule,
     PaymentsModule,
+    AdminModule,
     HealthModule,
   ],
   providers: [

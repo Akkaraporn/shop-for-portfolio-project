@@ -928,6 +928,41 @@ paths:
   # --- admin ---------------------------------------------------------------
 
   /admin/products:
+    get:
+      operationId: listAdminProducts
+      tags: [admin]
+      summary: Every product, in any status, with raw stock
+      description: >
+        The back office's view of the catalogue. Unlike `GET /products` it
+        includes `draft` and `archived` products — the admin UI cannot edit what
+        it cannot find — and each variant carries `stockOnHand` and
+        `stockReserved`, which the inventory screen needs and customers never see.
+        Newest first, with the same `Page` envelope and cursor codec as every
+        other list.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Restrict to one publication status.
+          schema:
+            $ref: "#/components/schemas/ProductStatus"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of products.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProductPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
     post:
       operationId: createProduct
       tags: [admin]
@@ -1105,7 +1140,9 @@ paths:
       description: >
         Forward-only: `paid` → `fulfilled` → `completed`. Every other
         transition returns 409, and the `errors` array names the states that
-        *are* reachable from the current one. That lets the admin UI render its
+        *are* reachable from the current one — one entry per state, with
+        `field: "status"` and the state itself as `message`. `errors` is
+        omitted when the order can go nowhere. That lets the admin UI render its
         buttons from the error response instead of carrying a fourth copy of the
         state machine.
 
@@ -2198,6 +2235,37 @@ components:
           description: Move to a different category.
         status:
           $ref: "#/components/schemas/ProductStatus"
+
+    AdminProduct:
+      description: >
+        A product as the back office sees it: every field of `ProductDetail`,
+        in any status, with each variant's raw stock columns.
+      allOf:
+        - $ref: "#/components/schemas/ProductDetail"
+        - type: object
+          required: [categoryId, variants]
+          properties:
+            categoryId:
+              type: string
+              format: uuid
+              description: The category it is filed under, as the edit form needs it.
+            variants:
+              type: array
+              description: Active variants, cheapest first, with raw stock.
+              items:
+                $ref: "#/components/schemas/AdminVariant"
+
+    AdminProductPage:
+      description: A page of products for the back office.
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              description: Products, newest first.
+              items:
+                $ref: "#/components/schemas/AdminProduct"
 
     StockAdjustmentRequest:
       type: object

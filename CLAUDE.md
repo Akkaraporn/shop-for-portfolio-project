@@ -195,6 +195,17 @@ same hash in both languages.
 - **Everything that releases or commits a reservation sorts variant locks the same
   way** as checkout — cancel, the sweeper, and the webhook all do (ADR-004).
 
+## Admin conventions
+
+- **`@Roles('admin')` sits on the controller class**, so a route added later cannot
+  forget it.
+- **The order state machine lives only in `admin/order-transitions.ts`.** The web app
+  renders its buttons from the 409's `errors[]`, never from a copy of the table.
+- **Stock moves by `adjust()` from `admin/stock-math.ts` under `FOR UPDATE`**; the
+  pure functions there are the arithmetic every stock path shares.
+- **Every product write calls `categories.invalidate()`**: the cached tree carries
+  product counts.
+
 ## Cart conventions
 
 - **Resolution order is fixed**: a valid access token wins and `X-Cart-Token` is

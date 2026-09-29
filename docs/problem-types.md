@@ -32,7 +32,7 @@ Source of truth for the Node side:
 | `checkout-in-progress` | 409 | Checkout already in progress | A checkout with this idempotency key is still running. |
 | `order-not-cancellable` | 409 | Order cannot be cancelled | Cancelling an order that is already paid. |
 | `payment-not-confirmable` | 409 | Payment cannot be confirmed | Confirming against a cancelled or expired order. |
-| `invalid-transition` | 409 | Invalid status transition | `errors[]` names the states reachable from the current one. |
+| `invalid-transition` | 409 | Invalid status transition | `errors[]` has one entry per reachable state: `{ field: "status", message: "<state>" }`. Omitted when there is none. |
 | `validation-failed` | 422 | Validation failed | Well-formed request, invalid contents. `errors[]` lists every bad field. |
 | `invalid-cursor` | 422 | Invalid cursor | A pagination cursor this API did not issue, or cannot read. |
 | `idempotency-key-reused` | 422 | Idempotency key reused with a different request | Same key, different canonical body hash. |

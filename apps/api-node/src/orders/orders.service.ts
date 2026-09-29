@@ -24,6 +24,8 @@ const ORDER_INCLUDE = {
 
 export const DEFAULT_ORDER_LIMIT = 20;
 
+export { ORDER_INCLUDE };
+
 @Injectable()
 export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -38,7 +40,14 @@ export class OrdersService {
    */
   async list(
     userId: string,
-    options: { cursor?: string; limit?: number; status?: string; allUsers?: boolean },
+    options: {
+      cursor?: string;
+      limit?: number;
+      status?: string;
+      allUsers?: boolean;
+      /** With `allUsers`, restricts the admin list to one customer. */
+      filterUserId?: string;
+    },
   ): Promise<Page<OrderView>> {
     const limit = options.limit ?? DEFAULT_ORDER_LIMIT;
 
@@ -48,6 +57,10 @@ export class OrdersService {
     // Sharing it keeps the two `Page` envelopes identical, which the contract requires.
     if (!options.allUsers) {
       conditions.push(Prisma.sql`o.user_id = ${userId}::uuid`);
+    }
+
+    if (options.filterUserId) {
+      conditions.push(Prisma.sql`o.user_id = ${options.filterUserId}::uuid`);
     }
 
     if (options.status) {

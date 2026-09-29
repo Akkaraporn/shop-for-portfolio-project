@@ -110,8 +110,8 @@ built — not reverse-engineered from TypeScript two phases later.
 | 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) ✅ | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
 | 2.5 | ⭐ [Checkout: idempotency, variant locking, stock reservation](https://app.clickup.com/t/z8v9xnfz5q) ✅ | Urgent | 24h | 20 concurrent checkouts on one remaining unit → exactly one succeeds |
 | 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) ✅ | High | 15h | Same webhook delivered five times decrements stock once |
-| 2.7 | [Admin: products, inventory delta, order status machine](https://app.clickup.com/t/z8v9xnfz5w) | Normal | 9h | `delta: -999` → 409; customer token → 403 |
-| 2.8 | [Dockerize + unit tests for the hard parts](https://app.clickup.com/t/z8v9xnfz5x) | High | 9h | `make clean && make up-node` from a clean tree serves every endpoint |
+| 2.7 | [Admin: products, inventory delta, order status machine](https://app.clickup.com/t/z8v9xnfz5w) ✅ | Normal | 9h | `delta: -999` → 409; customer token → 403 |
+| 2.8 | [Dockerize + unit tests for the hard parts](https://app.clickup.com/t/z8v9xnfz5x) ✅ | High | 9h | `make clean && make up-node` from a clean tree serves every endpoint |
 
 ### What 2.1 settled
 
@@ -277,6 +277,36 @@ will fail identically.
 One test-infrastructure change: integration suites now run with `--runInBand`. They
 share one database and mutate the same seeded stock rows, so in parallel they raced
 each other — two suites' stock assertions failed together while each passed alone.
+
+### What 2.7 settled
+
+- **One endpoint was added to the contract: `GET /admin/products`.** Without it the
+  admin UI could not find a draft or archived product (the catalogue 404s them), and
+  nothing exposed `stockOnHand`/`stockReserved` outside a stock adjustment. Cheap to
+  add now, before Java exists; 5.4 must port it.
+- **`invalid-transition` lists each reachable state as its own `errors[]` entry**,
+  `{field: "status", message: "fulfilled"}`, so a client reads them without parsing
+  prose. Omitted when the order can go nowhere.
+- Moving an order to the status it already has is a 409, not a no-op: it is not a
+  transition, and the 409 tells a double-clicking admin where the order is now.
+- The row is locked before the transition check, so two admins racing on one order
+  get one 200 and one 409 — proven in the integration suite.
+- Stock adjustments are audited in `outbox_events` (`stock.adjusted`, with the reason
+  and admin id) rather than a new table.
+- `src/admin/order-transitions.ts` and `src/admin/stock-math.ts` are pure and
+  unit-tested — every one of the 49 status pairs, and reserve/commit/release/adjust —
+  so Java ports the tests alongside the code.
+
+### What 2.8 settled
+
+- The API image is **82MB compressed** (the pull), ~260MB unpacked, of which ~155MB
+  is the `node:22-alpine` base and 123MB of that the node binary alone. It was 653MB:
+  npm installs `@prisma/client`'s peers (the Prisma CLI, its engines, TypeScript,
+  `effect`) even with `--omit=dev`, and `--omit=peer` does not override that. They are
+  deleted explicitly, with the unused per-database WebAssembly engines.
+- Non-root user, `HEALTHCHECK` on `/api/v1/health`, multi-stage: already in place.
+- There is no Postman collection: Postman imports `contract/openapi.yaml` directly,
+  and a hand-kept collection would be one more copy of the contract to drift.
 
 ## Phase 3 — React Frontend
 
