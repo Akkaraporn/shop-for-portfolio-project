@@ -1,0 +1,76 @@
+{
+  "$comment": "Shared cursor codec vectors. Both implementations must reproduce every cursor string below exactly. Read by the Node suite (apps/api-node/src/common/pagination/cursor.spec.ts) and by the Java port (task 5.3). Format specified in docs/cursor-format.md. Regenerate with tests/fixtures/.gen-cursor-vectors.mjs.",
+  "format": "base64url, unpadded, of {\"v\":<sortValue>,\"i\":<id>} with no whitespace",
+  "vectors": [
+    {
+      "name": "newest",
+      "sortValue": "2026-03-14T08:21:05.123Z",
+      "id": "01930002-0000-7000-8000-000000000001",
+      "note": "An RFC 3339 millisecond timestamp, as the newest sort produces.",
+      "cursor": "eyJ2IjoiMjAyNi0wMy0xNFQwODoyMTowNS4xMjNaIiwiaSI6IjAxOTMwMDAyLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSJ9"
+    },
+    {
+      "name": "price",
+      "sortValue": "129000",
+      "id": "01930002-0000-7000-8000-00000000000b",
+      "note": "min_price_cents as a string, never a JSON number.",
+      "cursor": "eyJ2IjoiMTI5MDAwIiwiaSI6IjAxOTMwMDAyLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwYiJ9"
+    },
+    {
+      "name": "price-zero",
+      "sortValue": "0",
+      "id": "01930002-0000-7000-8000-00000000000c",
+      "note": "Zero must not become an empty string or be omitted.",
+      "cursor": "eyJ2IjoiMCIsImkiOiIwMTkzMDAwMi0wMDAwLTcwMDAtODAwMC0wMDAwMDAwMDAwMGMifQ"
+    },
+    {
+      "name": "name-thai",
+      "sortValue": "เสื้อยืดคอกลม ผ้าฝ้ายออร์แกนิก",
+      "id": "01930002-0000-7000-8000-000000000001",
+      "note": "The case that breaks a JSON library configured to escape non-ASCII. Must be raw UTF-8.",
+      "cursor": "eyJ2Ijoi4LmA4Liq4Li34LmJ4Lit4Lii4Li34LiU4LiE4Lit4LiB4Lil4LihIOC4nOC5ieC4suC4neC5ieC4suC4ouC4reC4reC4o-C5jOC5geC4geC4meC4tOC4gSIsImkiOiIwMTkzMDAwMi0wMDAwLTcwMDAtODAwMC0wMDAwMDAwMDAwMDEifQ"
+    },
+    {
+      "name": "name-thai-tone-marks",
+      "sortValue": "กางเกงขาสั้นผ้าฝ้าย",
+      "id": "01930002-0000-7000-8000-000000000007",
+      "note": "Combining vowels and tone marks: multi-byte sequences that must survive byte-identically.",
+      "cursor": "eyJ2Ijoi4LiB4Liy4LiH4LmA4LiB4LiH4LiC4Liy4Liq4Lix4LmJ4LiZ4Lic4LmJ4Liy4Lid4LmJ4Liy4LiiIiwiaSI6IjAxOTMwMDAyLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwNyJ9"
+    },
+    {
+      "name": "name-latin",
+      "sortValue": "Oxford Button-Down Shirt",
+      "id": "01930002-0000-7000-8000-000000000004",
+      "note": "Plain ASCII, the easy case, included so a failure here localises the bug quickly.",
+      "cursor": "eyJ2IjoiT3hmb3JkIEJ1dHRvbi1Eb3duIFNoaXJ0IiwiaSI6IjAxOTMwMDAyLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwNCJ9"
+    },
+    {
+      "name": "quote-in-value",
+      "sortValue": "a \"quoted\" name",
+      "id": "01930002-0000-7000-8000-000000000002",
+      "note": "The quote is escaped, and nothing else about the string changes.",
+      "cursor": "eyJ2IjoiYSBcInF1b3RlZFwiIG5hbWUiLCJpIjoiMDE5MzAwMDItMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIn0"
+    },
+    {
+      "name": "backslash-in-value",
+      "sortValue": "back\\slash",
+      "id": "01930002-0000-7000-8000-000000000003",
+      "note": "The backslash is doubled.",
+      "cursor": "eyJ2IjoiYmFja1xcc2xhc2giLCJpIjoiMDE5MzAwMDItMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAzIn0"
+    },
+    {
+      "name": "empty-value",
+      "sortValue": "",
+      "id": "01930002-0000-7000-8000-000000000005",
+      "note": "An empty sort value is still a valid cursor.",
+      "cursor": "eyJ2IjoiIiwiaSI6IjAxOTMwMDAyLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwNSJ9"
+    },
+    {
+      "name": "emoji",
+      "sortValue": "thread 🧵",
+      "id": "01930002-0000-7000-8000-000000000006",
+      "note": "Outside the BMP: a surrogate pair, where per-code-unit iteration would split the character.",
+      "cursor": "eyJ2IjoidGhyZWFkIPCfp7UiLCJpIjoiMDE5MzAwMDItMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDA2In0"
+    }
+  ]
+}

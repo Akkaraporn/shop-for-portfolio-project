@@ -66,8 +66,10 @@ Redis, Flyway and the nginx gateway, all reporting healthy, and the backend swap
 is already proven — pointing `BACKEND_HOST` at a different upstream changes which
 implementation answers `/api/v1/health` with no client change at all.
 
-Next: the NestJS implementation (Phase 2). No backend code exists yet, so
-`make up-node` tells you to use `make up-infra` instead of failing obscurely.
+Phase 2 has begun. The NestJS foundation is in `apps/api-node`: zod-validated
+configuration, an RFC 9457 exception filter that nothing escapes, pino logging
+correlated by request id, `/health` and `/ready`, and the cursor codec — 61 tests,
+no database required to run them.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:

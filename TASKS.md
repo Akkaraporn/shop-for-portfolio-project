@@ -104,7 +104,7 @@ built — not reverse-engineered from TypeScript two phases later.
 
 | # | Task | Priority | Est. | Done when |
 | --- | --- | --- | --- | --- |
-| 2.1 | [Foundation: Prisma, Problem filter, logging, health, cursor codec](https://app.clickup.com/t/z8v9xnfz5d) | Urgent | 16h | Any error at all comes back as `problem+json`; no HTML error page can escape |
+| 2.1 | [Foundation: Prisma, Problem filter, logging, health, cursor codec](https://app.clickup.com/t/z8v9xnfz5d) ✅ | Urgent | 16h | Any error at all comes back as `problem+json`; no HTML error page can escape |
 | 2.2 | [Auth: register, login, JWT guard, refresh rotation](https://app.clickup.com/t/z8v9xnfz5g) | High | 13h | Reusing a rotated refresh token revokes the whole token family |
 | 2.3 | [Catalog: categories, product list, search, detail](https://app.clickup.com/t/z8v9xnfz5j) | High | 12h | Walking the cursor to the end returns every row, none twice, none missed |
 | 2.4 | [Cart: resolver, CRUD, guest-to-user merge](https://app.clickup.com/t/z8v9xnfz5p) | High | 12h | Guest adds two items → registers → items survive → logout/login → still there |
@@ -112,6 +112,21 @@ built — not reverse-engineered from TypeScript two phases later.
 | 2.6 | [Orders & Payments: history, cancel, mock provider, webhook](https://app.clickup.com/t/z8v9xnfz5t) | High | 15h | Same webhook delivered five times decrements stock once |
 | 2.7 | [Admin: products, inventory delta, order status machine](https://app.clickup.com/t/z8v9xnfz5w) | Normal | 9h | `delta: -999` → 409; customer token → 403 |
 | 2.8 | [Dockerize + unit tests for the hard parts](https://app.clickup.com/t/z8v9xnfz5x) | High | 9h | `make clean && make up-node` from a clean tree serves every endpoint |
+
+### What 2.1 settled
+
+- `docs/cursor-format.md` and `tests/fixtures/cursor-vectors.json` specify the
+  cursor codec so 5.3 can port it rather than reverse-engineer it. The codec
+  writes its JSON by hand rather than through a serialiser, because serialisers
+  disagree about escaping non-ASCII and every `name_asc` cursor carries Thai text.
+- `docs/problem-types.md` is the full `type`/`title` registry. Both are part of
+  the contract: a parity test compares titles too.
+- Implicit type conversion is off in the validation pipe. It had silently coerced
+  a JSON number into a string so `@IsString()` accepted it, while Jackson would
+  have rejected the same body — a parity failure with no behavioural cause.
+- Host ports for Postgres and Redis are 55432 and 56379, not the defaults, because
+  a locally installed instance shadows the published port and connections then
+  fail authentication in a way that looks like bad credentials.
 
 **2.5 is the task the whole project exists for.** It is the one that gets asked
 about, and the one that makes this not a CRUD tutorial. Two rules from it bind

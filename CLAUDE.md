@@ -40,6 +40,9 @@ Until Phase 2 exists, `make up-infra` is the one to use.
 | `migrations/V2__seed.sql` | Demo data, with a self-check that fails the migration if it half-applies. |
 | `tests/schema/verify-constraints.sql` | `make db-verify` — tries to break every guarantee. |
 | `docs/adr/*.md` | Why each decision was made. |
+| `docs/cursor-format.md` | The cursor codec, byte for byte. Java ports from this. |
+| `docs/problem-types.md` | Every `type` URI and title. Part of the contract. |
+| `tests/fixtures/cursor-vectors.json` | Shared vectors. Both backends must reproduce them. |
 | `docs/future.md` | What was deliberately not built. |
 
 Flyway owns the schema. Prisma reads it with `db pull`; JPA reads it with
@@ -105,6 +108,28 @@ pages.
 parse the body, sort keys recursively, serialise with no whitespace, SHA-256,
 lowercase hex. The same body with keys in a different order must produce the
 same hash in both languages.
+
+## Node backend conventions
+
+- **`src/bootstrap.ts` owns the global pipeline** — filter, validation pipe, and
+  the request-id middleware. `main.ts` and every HTTP test call `configureApp`, so
+  a test can never verify a pipeline that differs from production.
+- **The request-id middleware is registered with `app.use`, not a module's
+  `configure()`.** Module middleware only covers that module's routes, so a 404 on
+  an unclaimed path would have no `traceId` — the one case a caller most needs
+  something to quote.
+- **Never enable `enableImplicitConversion`.** It coerces request bodies, so a
+  JSON number passes `@IsString()`. Jackson is strict by default and rejects the
+  same body, which is a parity failure created purely by a convenience setting.
+  Query and path DTOs declare `@Type(() => Number)` explicitly instead.
+- **Throw `ProblemException` with a slug from the registry**, never a bare
+  `HttpException` and never a hand-built body. The filter is the only place that
+  assembles a response, so `traceId` and `instance` cannot be forgotten.
+- **Nothing reads `process.env` except `config/env.ts`.** An unvalidated variable
+  entering elsewhere makes the zod schema stop being the whole truth.
+- **`RedisService` never throws.** Every method returns a miss when the cache is
+  unreachable, and `enableOfflineQueue: false` is what stops a Redis outage from
+  presenting as request timeouts instead of cache misses.
 
 ## Rules that are easy to get wrong
 

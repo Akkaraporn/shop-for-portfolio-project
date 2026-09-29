@@ -1,0 +1,292 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model cart_items {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cart_id          String           @db.Uuid
+  variant_id       String           @db.Uuid
+  quantity         Int
+  created_at       DateTime         @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime         @default(now()) @db.Timestamptz(3)
+  carts            carts            @relation(fields: [cart_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "cart_items_cart_fk")
+  product_variants product_variants @relation(fields: [variant_id], references: [id], onUpdate: NoAction, map: "cart_items_variant_fk")
+
+  @@unique([cart_id, variant_id], map: "cart_items_cart_variant_key")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model carts {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String?      @db.Uuid
+  token_hash String?      @db.Char(64)
+  currency   String       @default("THB") @db.Char(3)
+  created_at DateTime     @default(now()) @db.Timestamptz(3)
+  updated_at DateTime     @default(now()) @db.Timestamptz(3)
+  expires_at DateTime?    @db.Timestamptz(3)
+  cart_items cart_items[]
+  users      users?       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "carts_user_fk")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model categories {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parent_id        String?      @db.Uuid
+  slug             String       @unique @db.VarChar(120)
+  name             String       @db.VarChar(120)
+  position         Int          @default(0)
+  is_active        Boolean      @default(true)
+  created_at       DateTime     @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime     @default(now()) @db.Timestamptz(3)
+  categories       categories?  @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "categories_parent_fk")
+  other_categories categories[] @relation("categoriesTocategories")
+  products         products[]
+
+  @@index([parent_id], map: "categories_parent_idx")
+}
+
+model flyway_schema_history {
+  installed_rank Int      @id(map: "flyway_schema_history_pk")
+  version        String?  @db.VarChar(50)
+  description    String   @db.VarChar(200)
+  type           String   @db.VarChar(20)
+  script         String   @db.VarChar(1000)
+  checksum       Int?
+  installed_by   String   @db.VarChar(100)
+  installed_on   DateTime @default(now()) @db.Timestamp(6)
+  execution_time Int
+  success        Boolean
+
+  @@index([success], map: "flyway_schema_history_s_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model idempotency_keys {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String    @db.Uuid
+  endpoint        String    @db.VarChar(64)
+  idempotency_key String    @db.VarChar(128)
+  request_hash    String    @db.Char(64)
+  status          String    @default("in_progress") @db.VarChar(16)
+  response_status Int?
+  response_body   Json?
+  created_at      DateTime  @default(now()) @db.Timestamptz(3)
+  completed_at    DateTime? @db.Timestamptz(3)
+  expires_at      DateTime  @db.Timestamptz(3)
+  users           users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "idempotency_keys_user_fk")
+
+  @@unique([user_id, endpoint, idempotency_key], map: "idempotency_keys_scope_key")
+  @@index([expires_at], map: "idempotency_keys_expiry_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model order_items {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id         String           @db.Uuid
+  variant_id       String           @db.Uuid
+  product_id       String           @db.Uuid
+  product_name     String           @db.VarChar(200)
+  variant_name     String           @db.VarChar(120)
+  sku              String           @db.VarChar(64)
+  image_url        String?
+  unit_price_cents BigInt
+  quantity         Int
+  line_total_cents BigInt
+  orders           orders           @relation(fields: [order_id], references: [id], onUpdate: NoAction, map: "order_items_order_fk")
+  products         products         @relation(fields: [product_id], references: [id], onUpdate: NoAction, map: "order_items_product_fk")
+  product_variants product_variants @relation(fields: [variant_id], references: [id], onUpdate: NoAction, map: "order_items_variant_fk")
+
+  @@index([order_id], map: "order_items_order_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model orders {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_number       String               @unique(map: "orders_number_key") @db.VarChar(20)
+  user_id            String               @db.Uuid
+  status             String               @default("pending_payment") @db.VarChar(24)
+  subtotal_cents     BigInt
+  shipping_cents     BigInt
+  total_cents        BigInt
+  currency           String               @default("THB") @db.Char(3)
+  shipping_address   Json
+  note               String?              @db.VarChar(500)
+  placed_at          DateTime             @default(now()) @db.Timestamptz(3)
+  paid_at            DateTime?            @db.Timestamptz(3)
+  cancelled_at       DateTime?            @db.Timestamptz(3)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(3)
+  order_items        order_items[]
+  users              users                @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "orders_user_fk")
+  payments           payments?
+  stock_reservations stock_reservations[]
+
+  @@index([status, placed_at(sort: Desc), id(sort: Desc)], map: "orders_status_idx")
+  @@index([user_id, placed_at(sort: Desc), id(sort: Desc)], map: "orders_user_idx")
+}
+
+model outbox_events {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aggregate_type String    @db.VarChar(32)
+  aggregate_id   String    @db.Uuid
+  event_type     String    @db.VarChar(64)
+  payload        Json
+  created_at     DateTime  @default(now()) @db.Timestamptz(3)
+  published_at   DateTime? @db.Timestamptz(3)
+
+  @@index([aggregate_type, aggregate_id], map: "outbox_events_aggregate_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model payments {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id       String   @unique(map: "payments_order_key") @db.Uuid
+  status         String   @default("requires_action") @db.VarChar(20)
+  method         String   @db.VarChar(16)
+  amount_cents   BigInt
+  currency       String   @default("THB") @db.Char(3)
+  provider       String   @default("mock") @db.VarChar(32)
+  provider_ref   String?  @db.VarChar(128)
+  failure_reason String?  @db.VarChar(200)
+  created_at     DateTime @default(now()) @db.Timestamptz(3)
+  updated_at     DateTime @default(now()) @db.Timestamptz(3)
+  orders         orders   @relation(fields: [order_id], references: [id], onUpdate: NoAction, map: "payments_order_fk")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_images {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id String   @db.Uuid
+  url        String
+  alt        String?  @db.VarChar(200)
+  position   Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  products   products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "product_images_product_fk")
+
+  @@unique([product_id, position], map: "product_images_product_position_key")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model product_variants {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id         String               @db.Uuid
+  sku                String               @unique @db.VarChar(64)
+  name               String               @db.VarChar(120)
+  price_cents        BigInt
+  stock_on_hand      Int                  @default(0)
+  stock_reserved     Int                  @default(0)
+  is_active          Boolean              @default(true)
+  position           Int                  @default(0)
+  created_at         DateTime             @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(3)
+  cart_items         cart_items[]
+  order_items        order_items[]
+  products           products             @relation(fields: [product_id], references: [id], onUpdate: NoAction, map: "product_variants_product_fk")
+  stock_reservations stock_reservations[]
+
+  @@index([product_id], map: "product_variants_product_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model products {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category_id      String             @db.Uuid
+  slug             String             @unique @db.VarChar(160)
+  name             String             @db.VarChar(200)
+  description      String
+  status           String             @default("draft") @db.VarChar(16)
+  min_price_cents  BigInt             @default(0)
+  currency         String             @default("THB") @db.Char(3)
+  created_at       DateTime           @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(3)
+  order_items      order_items[]
+  product_images   product_images[]
+  product_variants product_variants[]
+  categories       categories         @relation(fields: [category_id], references: [id], onUpdate: NoAction, map: "products_category_fk")
+
+  @@index([category_id], map: "products_category_idx")
+  @@index([status, name, id], map: "products_name_asc_idx")
+  @@index([status, created_at(sort: Desc), id(sort: Desc)], map: "products_newest_idx")
+  @@index([status, min_price_cents, id], map: "products_price_asc_idx")
+  @@index([status, min_price_cents(sort: Desc), id(sort: Desc)], map: "products_price_desc_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model refresh_tokens {
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id              String           @db.Uuid
+  family_id            String           @db.Uuid
+  token_hash           String           @unique @db.Char(64)
+  replaced_by          String?          @db.Uuid
+  issued_at            DateTime         @default(now()) @db.Timestamptz(3)
+  expires_at           DateTime         @db.Timestamptz(3)
+  revoked_at           DateTime?        @db.Timestamptz(3)
+  refresh_tokens       refresh_tokens?  @relation("refresh_tokensTorefresh_tokens", fields: [replaced_by], references: [id], onUpdate: NoAction, map: "refresh_tokens_replaced_by_fk")
+  other_refresh_tokens refresh_tokens[] @relation("refresh_tokensTorefresh_tokens")
+  users                users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "refresh_tokens_user_fk")
+
+  @@index([expires_at], map: "refresh_tokens_expiry_idx")
+  @@index([family_id], map: "refresh_tokens_family_idx")
+  @@index([user_id], map: "refresh_tokens_user_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stock_reservations {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id         String           @db.Uuid
+  variant_id       String           @db.Uuid
+  quantity         Int
+  status           String           @default("held") @db.VarChar(16)
+  expires_at       DateTime         @db.Timestamptz(3)
+  created_at       DateTime         @default(now()) @db.Timestamptz(3)
+  resolved_at      DateTime?        @db.Timestamptz(3)
+  orders           orders           @relation(fields: [order_id], references: [id], onUpdate: NoAction, map: "stock_reservations_order_fk")
+  product_variants product_variants @relation(fields: [variant_id], references: [id], onUpdate: NoAction, map: "stock_reservations_variant_fk")
+
+  @@unique([order_id, variant_id], map: "stock_reservations_order_variant_key")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model users {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email            String             @db.VarChar(255)
+  password_hash    String
+  full_name        String             @db.VarChar(120)
+  role             String             @default("customer") @db.VarChar(16)
+  created_at       DateTime           @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(3)
+  carts            carts[]
+  idempotency_keys idempotency_keys[]
+  orders           orders[]
+  refresh_tokens   refresh_tokens[]
+}
+
+model webhook_events {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider     String    @db.VarChar(32)
+  event_id     String    @db.VarChar(128)
+  event_type   String    @db.VarChar(64)
+  payload      Json
+  received_at  DateTime  @default(now()) @db.Timestamptz(3)
+  processed_at DateTime? @db.Timestamptz(3)
+
+  @@unique([provider, event_id], map: "webhook_events_provider_event_key")
+}
