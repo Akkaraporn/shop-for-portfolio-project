@@ -32,21 +32,30 @@ a change in two languages plus the tests.
 
 | # | Task | Priority | Est. | Done when |
 | --- | --- | --- | --- | --- |
-| 1.1 | [Repo scaffold + Makefile + ADR template](https://app.clickup.com/t/z8v9xnfz55) | High | 4h | `git clone` shows where everything lives, before any code exists |
-| 1.2 | [Close the OpenAPI contract + Spectral lint](https://app.clickup.com/t/z8v9xnfz56) | Urgent | 7h | `make lint-contract` is clean and no endpoint's behaviour has to be guessed |
+| 1.1 | [Repo scaffold + Makefile + ADR template](https://app.clickup.com/t/z8v9xnfz55) ✅ | High | 4h | `git clone` shows where everything lives, before any code exists |
+| 1.2 | [Close the OpenAPI contract + Spectral lint](https://app.clickup.com/t/z8v9xnfz56) ✅ | Urgent | 7h | `make lint-contract` is clean and no endpoint's behaviour has to be guessed |
 | 1.3 | [Flyway V1 migration + V2 seed](https://app.clickup.com/t/z8v9xnfz58) | Urgent | 7h | `make clean && make up-node` gives a demo-ready database, three times running |
 | 1.4 | [Compose: Postgres + Redis + Flyway + nginx gateway](https://app.clickup.com/t/z8v9xnfz5a) | High | 5h | `docker compose ps` all healthy; the gateway swap works from env alone |
 | 1.5 | [ADR-001 … ADR-003](https://app.clickup.com/t/z8v9xnfz5b) | Normal | 2h | Three ADRs in `docs/adr/`, one page each, Alternatives section non-empty |
 
-Three questions 1.2 has to settle before anything else starts:
+Three questions 1.2 had to settle before anything else started — all three are
+now answered in the contract itself, in the description of the operation each
+one affects:
 
-1. **What does `sort=price_asc` sort by?** If it is the product's cheapest
-   variant, `products` needs a denormalised `min_price_cents` — a subquery will
-   not use an index — which means going back into `V1__init.sql`.
-2. **How is shipping calculated?** Flat rate for now, said out loud in the
-   README, rather than a shipping-zone table nobody asked for.
-3. **How many currencies?** THB only, with a `currency` field present to show
-   the seam was considered.
+1. **`sort=price_asc` orders by the product's cheapest active variant**, read
+   from a denormalised `min_price_cents` column on `products`. A `MIN()`
+   subquery cannot use an index. → **1.3 must include that column in
+   `V1__init.sql`**, and both backends must maintain it on every variant
+   reprice and archive.
+2. **Flat shipping rate** (`SHIPPING_FLAT_CENTS`, 5000 = ฿50), stated in the
+   README as deliberate rather than hidden behind a shipping-zone table.
+3. **THB only**, with `currency` on every money-bearing response so the seam is
+   visible. No endpoint accepts a currency as input.
+
+A fourth question surfaced while writing the spec and is settled the same way:
+**guests can browse and hold a basket, but cannot checkout.** An order belongs
+to a user, so a guest registers or signs in and `POST /carts/me/merge` carries
+the basket across. That is why the merge endpoint exists.
 
 ## Phase 2 — NestJS Backend
 

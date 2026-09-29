@@ -1,12 +1,11 @@
 # ---------------------------------------------------------------------------
 # SINGLE SOURCE OF TRUTH. Both backends implement this; the frontend's types
 # are generated from it. Nothing here is negotiable at implementation time —
-# if reality disagrees with this file, this file gets fixed first.
+# if reality disagrees with this file, this file gets fixed first, and the
+# affected ClickUp tasks get updated with it.
 #
-# STATUS: skeleton. The conventions, the Problem/Page envelopes and the health
-# endpoints are settled. The 25 paths / 27 schemas of the real contract are
-# still to be written — that is ClickUp task 1.2, and no backend or client
-# code should be written before it is done and `make lint-contract` is clean.
+# 25 paths / 26 operations. `make lint-contract` must be clean before any
+# codegen, any backend code, and every commit.
 # ---------------------------------------------------------------------------
 openapi: 3.1.0
 
@@ -32,6 +31,23 @@ info:
     7. An absent optional field is omitted from the body, not sent as `null`
        (unless the schema declares it nullable).
     8. Every list operation returns the `Page` envelope, even for one item.
+
+    Three questions this spec used to leave open, now settled:
+
+    - **`sort=price_asc` orders by the product's cheapest active variant**, read
+      from a denormalised `min_price_cents` column on `products`. A `MIN()`
+      subquery over variants cannot use an index. Both implementations must
+      maintain that column whenever a variant price changes or a variant is
+      archived. See `GET /products`.
+    - **Shipping is a flat rate per order** (`SHIPPING_FLAT_CENTS`, 5000 = ฿50).
+      Deliberate: zoned shipping is a whole subsystem and no new idea. See
+      `POST /checkout`.
+    - **One currency, THB.** `currency` appears on every money-bearing response
+      so the seam is visible, but no endpoint accepts a currency as input.
+
+    Guest access: the catalogue and the cart work without a token. Checkout does
+    not — an order belongs to a user. A guest carries `X-Cart-Token`, then
+    registers or logs in, and `POST /carts/me/merge` moves the basket over.
   contact:
     name: Akkaraporn Lertpiputsakul
     email: ahar0007@gmail.com
@@ -42,11 +58,34 @@ servers:
   - url: http://localhost:8080/api/v1
     description: Local gateway (proxies to whichever backend profile is up)
 
+# Authenticated by default. Operations that allow anonymous callers override
+# this with their own `security`, so forgetting the annotation fails closed.
+security:
+  - bearerAuth: []
+
 tags:
   - name: meta
     description: Health and readiness probes.
+  - name: auth
+    description: Registration, login, token rotation.
+  - name: catalog
+    description: Public browsing — categories, products, search.
+  - name: cart
+    description: The basket. Works for guests and for signed-in users.
+  - name: checkout
+    description: Turning a basket into an order. The heart of the project.
+  - name: orders
+    description: Order history and cancellation.
+  - name: payments
+    description: Payment confirmation against the mock provider.
+  - name: webhooks
+    description: Inbound provider callbacks. Not called by clients.
+  - name: admin
+    description: Back-office operations. Requires the `admin` role.
 
 paths:
+  # --- meta ----------------------------------------------------------------
+
   /health:
     get:
       operationId: getHealth
@@ -57,6 +96,7 @@ paths:
         reports which implementation answered, which is how the backend swap is
         demonstrated: the same request returns `nestjs` or `spring-boot`
         depending only on which compose profile is running.
+      security: []
       responses:
         "200":
           description: The process is alive.
@@ -74,8 +114,10 @@ paths:
       summary: Readiness probe
       description: >
         Checks the dependencies this process needs in order to serve traffic.
-        Postgres is required. Redis is reported but not required — losing Redis
-        entirely must degrade performance, never correctness.
+        Postgres is required and a failure here returns 503. Redis is reported
+        but never gates readiness — losing Redis entirely must degrade
+        performance, never correctness.
+      security: []
       responses:
         "200":
           description: Ready to serve traffic.
@@ -92,6 +134,1010 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # --- auth ----------------------------------------------------------------
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Create an account
+      description: >
+        Creates a customer account and signs it in, returning the same session
+        payload as login so the client never has to make two calls. An email
+        already in use returns 409, not 422 — it is a conflict with existing
+        state rather than a malformed request. If `X-Cart-Token` is supplied, the
+        guest basket it names is claimed by the new account immediately; no
+        separate merge call is needed on this path.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CartTokenOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Account created and signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Sign in
+      description: >
+        Exchanges credentials for an access/refresh pair. Wrong password and
+        unknown email return byte-identical 401 responses and take the same time
+        to do it — an implementation that returns early for an unknown email
+        leaks which addresses are registered, so a missing user is verified
+        against a dummy hash before failing. As with register, a supplied
+        `X-Cart-Token` claims that guest basket.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CartTokenOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/refresh:
+    post:
+      operationId: refreshTokens
+      tags: [auth]
+      summary: Rotate the refresh token
+      description: >
+        Exchanges a refresh token for a new pair and revokes the one presented.
+        Refresh tokens are single-use: presenting one that has already been
+        rotated means a copy leaked, so every token in that family is revoked
+        and the response is 401. The legitimate user is signed out too, which is
+        the correct outcome — someone else has their token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: A new token pair. The presented token is now dead.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Sign out
+      description: >
+        Revokes the caller's refresh token family. Always 204, including when
+        the token is already revoked, unknown, or absent — a client retrying
+        after a dropped connection must not see an error for successfully
+        having no session.
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "204":
+          description: Signed out. No body.
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: The signed-in user
+      description: >
+        Returns the account behind the access token. Used by the client on boot
+        to decide whether a stored token is still good, so it must be cheap and
+        must not touch anything but the users table.
+      responses:
+        "200":
+          description: The current user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --- catalog -------------------------------------------------------------
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [catalog]
+      summary: The category tree
+      description: >
+        Returns every active category as a nested tree, built from flat rows.
+        Cached in Redis for five minutes under `catalog:categories:v1` and
+        invalidated when an admin edits a category; a Redis outage makes this
+        slower, never wrong. The whole tree is always returned, so `hasMore` is
+        always `false` — the envelope is kept anyway because every list in this
+        API has the same shape, and a client should never need to know which
+        lists can paginate.
+      security: []
+      responses:
+        "200":
+          description: The full tree.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryPage"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /products:
+    get:
+      operationId: listProducts
+      tags: [catalog]
+      summary: Browse and search products
+      description: >
+        Cursor-paginated product list. Only `active` products are ever returned;
+        `draft` and `archived` are invisible here regardless of filters.
+
+        `categorySlug` includes the whole subtree — filtering by a parent
+        category returns products filed under its descendants too, resolved with
+        a recursive CTE. Both implementations must agree on this: selecting a
+        top-level category and getting only its directly-filed products is a
+        parity failure.
+
+        `q` runs Postgres full-text search over name and description via the
+        existing GIN index. `sort=price_asc` and `price_desc` order by the
+        product's cheapest active variant, read from the denormalised
+        `min_price_cents` column — never a `MIN()` subquery, which cannot use an
+        index. Every sort carries `id` as a tiebreaker, without which rows with
+        equal sort values duplicate or vanish between pages.
+
+        Unknown query parameters are ignored rather than rejected.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Full-text search over product name and description.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - name: categorySlug
+          in: query
+          required: false
+          description: Restrict to this category and all of its descendants.
+          schema:
+            type: string
+            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        - name: minPriceCents
+          in: query
+          required: false
+          description: Lower bound, inclusive, on the product's cheapest variant.
+          schema:
+            type: integer
+            minimum: 0
+        - name: maxPriceCents
+          in: query
+          required: false
+          description: Upper bound, inclusive, on the product's cheapest variant.
+          schema:
+            type: integer
+            minimum: 0
+        - name: inStockOnly
+          in: query
+          required: false
+          description: >
+            Restrict to products with at least one variant whose available stock
+            is above zero. Advisory only — stock can change before checkout.
+          schema:
+            type: boolean
+            default: false
+        - name: sort
+          in: query
+          required: false
+          description: Ordering. Defaults to `newest`.
+          schema:
+            $ref: "#/components/schemas/ProductSort"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of products.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductPage"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /products/{slug}:
+    get:
+      operationId: getProduct
+      tags: [catalog]
+      summary: One product, with its variants
+      description: >
+        Full detail for one active product, including every active variant with
+        its available stock and every image.
+
+        `availableStock` is `stock_on_hand - stock_reserved` computed at read
+        time. It is display information and may already be stale by the time the
+        response is rendered — checkout re-verifies under a row lock. Neither a
+        client nor a future reader of this spec should make a sell/no-sell
+        decision from it.
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: URL-safe product identifier.
+          schema:
+            type: string
+            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      responses:
+        "200":
+          description: The product.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --- cart ----------------------------------------------------------------
+
+  /carts/me:
+    get:
+      operationId: getCart
+      tags: [cart]
+      summary: The caller's basket
+      description: >
+        Resolves the basket in a fixed order: a valid access token wins and
+        returns that user's basket, ignoring any `X-Cart-Token`; otherwise
+        `X-Cart-Token` names a guest basket; otherwise a new guest basket is
+        created. A token that is expired, unknown or malformed does not 404 —
+        a fresh basket is created and its token returned, because a user who
+        left a tab open overnight should find an empty cart, not an error.
+
+        Line totals are always recomputed from current prices. A basket shows
+        live prices; an order freezes them. Caching prices here would let a
+        shopper reach the payment step before discovering the price moved.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: "#/components/parameters/CartTokenOptional"
+      responses:
+        "200":
+          description: The basket. Prices are current as of this response.
+          headers:
+            X-Cart-Token:
+              $ref: "#/components/headers/CartToken"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /carts/me/items:
+    post:
+      operationId: addCartItem
+      tags: [cart]
+      summary: Add a variant to the basket
+      description: >
+        Upserts on `(cart_id, variant_id)`: adding a variant already present
+        increases its quantity rather than creating a second line. Quantity is
+        capped at 99 per line.
+
+        This reserves nothing. It returns 409 when the requested quantity
+        exceeds available stock, but another shopper can still take the item
+        first — reservation happens only at checkout. Reserving on add would
+        lock stock against people who never buy.
+
+        Returns the whole basket so the client never needs a follow-up read.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: "#/components/parameters/CartTokenOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddCartItemRequest"
+      responses:
+        "200":
+          description: The updated basket.
+          headers:
+            X-Cart-Token:
+              $ref: "#/components/headers/CartToken"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /carts/me/items/{itemId}:
+    patch:
+      operationId: updateCartItem
+      tags: [cart]
+      summary: Change a line's quantity
+      description: >
+        Sets an absolute quantity, between 1 and 99. Removing a line is
+        `DELETE`, not a quantity of zero — one way to express each intention.
+        Returns 409 if the new quantity exceeds available stock, and 404 if the
+        line does not belong to the caller's basket.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: "#/components/parameters/CartTokenOptional"
+        - name: itemId
+          in: path
+          required: true
+          description: Cart line identifier.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCartItemRequest"
+      responses:
+        "200":
+          description: The updated basket.
+          headers:
+            X-Cart-Token:
+              $ref: "#/components/headers/CartToken"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: removeCartItem
+      tags: [cart]
+      summary: Remove a line
+      description: >
+        Deletes one line. Returns the remaining basket rather than 204, so the
+        client can render new totals without a second round trip. Deleting a
+        line that is already gone returns 404 — unlike logout, there is no
+        retry-safety argument here, and a silent success would hide a client bug.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: "#/components/parameters/CartTokenOptional"
+        - name: itemId
+          in: path
+          required: true
+          description: Cart line identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The remaining basket.
+          headers:
+            X-Cart-Token:
+              $ref: "#/components/headers/CartToken"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /carts/me/merge:
+    post:
+      operationId: mergeCart
+      tags: [cart]
+      summary: Absorb a guest basket
+      description: >
+        Folds the guest basket named by `cartToken` into the signed-in user's
+        basket: shared variants have their quantities summed and capped at 99,
+        the rest move across, and the guest basket is then deleted.
+
+        Idempotent by design. A token that is unknown, expired, or already
+        merged returns 200 with the user's current basket rather than an error,
+        because a client whose connection dropped mid-merge will retry and must
+        not be punished for it.
+      responses:
+        "200":
+          description: The user's basket after the merge.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeCartRequest"
+
+  # --- checkout ------------------------------------------------------------
+
+  /checkout:
+    post:
+      operationId: checkout
+      tags: [checkout]
+      summary: Turn the basket into an order
+      description: >
+        Creates an order, reserves stock against it for
+        `RESERVATION_TTL_MINUTES`, and creates a payment in `requires_action`.
+        Nothing is charged and no stock is decremented here — reservation is a
+        promise, and the webhook is what makes it real.
+
+        **Idempotency is mandatory.** `Idempotency-Key` is required. The key is
+        scoped to the caller and stored with a SHA-256 hash of the canonicalised
+        request body (keys sorted recursively, no whitespace, lowercase hex):
+
+        - key unseen → the checkout proceeds
+        - key seen, completed, same body hash → the original response is
+          replayed verbatim with `Idempotency-Replayed: true`
+        - key seen, completed, different body hash → 422; the same key must not
+          mean two different requests
+        - key seen, still in progress → 409, `type` ending `/checkout-in-progress`
+
+        Because the keys live in the shared database rather than in process
+        memory, a retry sent to the *other* backend replays instead of placing a
+        second order. That is the property the cross-backend suite exists to
+        prove.
+
+        Variants are locked `FOR UPDATE` in ascending UUID order. Two baskets
+        sharing items in opposite orders would otherwise deadlock; sorting first
+        means the later request simply waits. **Both implementations must sort
+        identically** or the concurrency test fails against one of them.
+
+        Insufficient stock returns a single 409 listing **every** short line in
+        `errors`, each with its variant, requested and available quantity — not
+        just the first one found. Reporting one at a time makes the shopper fix
+        their basket repeatedly.
+
+        Shipping is a flat `SHIPPING_FLAT_CENTS` per order. Guests cannot
+        checkout: an order belongs to a user, so a guest registers or logs in
+        and merges their basket first.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >
+            Client-generated unique key for this checkout attempt, reused
+            verbatim on every retry of it. A UUID is the obvious choice.
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutRequest"
+      responses:
+        "201":
+          description: >
+            The order, with its payment in `requires_action`. Stock is reserved
+            but not yet decremented.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: >
+            Either stock ran out — `errors` lists every short line — or a
+            checkout with this key is already in flight.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: >
+            The basket is empty, the address is invalid, or this
+            `Idempotency-Key` was already used for a different request body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --- orders --------------------------------------------------------------
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: The caller's order history
+      description: >
+        Cursor-paginated, newest first, scoped to the signed-in user. An admin
+        calling this sees their own orders, not everyone's — the back-office
+        list is `GET /admin/orders`.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /orders/{orderNumber}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: One order
+      description: >
+        Full detail including the frozen line items and the payment. Requesting
+        an order that exists but belongs to someone else returns 403, not 404 —
+        the caller asked about a real thing and is simply not allowed to see it.
+        A number that matches no order returns 404.
+      parameters:
+        - $ref: "#/components/parameters/OrderNumber"
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /orders/{orderNumber}/cancel:
+    post:
+      operationId: cancelOrder
+      tags: [orders]
+      summary: Cancel an unpaid order
+      description: >
+        Releases the reservation and marks the order `cancelled`, both in one
+        transaction. Only `pending_payment` orders can be cancelled, which is
+        what the order's `cancellable` flag reports — clients read that flag
+        rather than reimplementing the rule.
+
+        Cancelling an already-cancelled order returns 200 with the order, since
+        a double-click must not produce an error. Cancelling a paid order
+        returns 409: that is a refund, which this project does not implement.
+      parameters:
+        - $ref: "#/components/parameters/OrderNumber"
+      responses:
+        "200":
+          description: The cancelled order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --- payments ------------------------------------------------------------
+
+  /payments/{paymentId}/confirm:
+    post:
+      operationId: confirmPayment
+      tags: [payments]
+      summary: Submit a payment for processing
+      description: >
+        Moves the payment from `requires_action` to `processing` and hands it to
+        the mock provider, which calls `POST /webhooks/payment` back after
+        `PAYMENT_MOCK_DELAY_MS`.
+
+        **This does not fulfil the order.** Stock is decremented by the webhook,
+        never here. The asymmetry is deliberate and matches how real providers
+        behave: if confirming settled the order, the webhook path would never be
+        exercised and swapping in a real provider would break immediately.
+
+        Confirming a payment that is already `processing` or `succeeded` returns
+        200 with its current state. Confirming one on a cancelled or expired
+        order returns 409.
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          description: Payment identifier, from the order's `payment.id`.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmPaymentRequest"
+      responses:
+        "200":
+          description: The payment, now `processing`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --- webhooks ------------------------------------------------------------
+
+  /webhooks/payment:
+    post:
+      operationId: receivePaymentWebhook
+      tags: [webhooks]
+      summary: Provider callback — where stock actually moves
+      description: >
+        Authenticated by an HMAC-SHA256 signature over the **raw** request body
+        in `X-Payment-Signature`, not by a bearer token. Verifying against a
+        re-serialised body fails, because key order and whitespace change; both
+        implementations must read the raw bytes before parsing.
+
+        Deduplicated by inserting `(provider, event_id)` into `webhook_events`
+        with `ON CONFLICT DO NOTHING`. A conflict means this event was already
+        handled, so the handler returns 200 and does nothing else. Providers
+        redeliver, and stock must move exactly once.
+
+        On `payment.succeeded`: decrements both `stock_on_hand` and
+        `stock_reserved`, commits the reservation, and marks the order `paid`.
+        On `payment.failed`: releases the reservation and marks the order
+        `payment_failed`.
+
+        **Always returns 200**, including for an unrecognised event type or a
+        payload that cannot be processed — a non-2xx makes a real provider retry
+        forever. Failures are logged, not signalled. This is also why `type` is
+        an open string rather than an enum: an unknown type is a normal
+        occurrence, not a validation error.
+      security: []
+      parameters:
+        - name: X-Payment-Signature
+          in: header
+          required: true
+          description: Hex-encoded HMAC-SHA256 of the raw body, keyed by the shared secret.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentWebhookEvent"
+      responses:
+        "200":
+          description: >
+            Acknowledged. Returned whether the event was applied, ignored as a
+            duplicate, or unrecognised.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookAck"
+        "401":
+          description: The signature did not verify. The only case that is not a 200.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  # --- admin ---------------------------------------------------------------
+
+  /admin/products:
+    post:
+      operationId: createProduct
+      tags: [admin]
+      summary: Create a product with its variants
+      description: >
+        Creates the product and all of its variants in one transaction — a
+        product with no sellable variant is not a useful half-state to allow.
+        A duplicate slug or SKU returns 409, never 500. Sets
+        `min_price_cents` from the cheapest variant, since `sort=price_asc`
+        reads that column.
+      responses:
+        "201":
+          description: The created product.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductRequest"
+
+  /admin/products/{productId}:
+    patch:
+      operationId: updateProduct
+      tags: [admin]
+      summary: Update a product
+      description: >
+        Partial update; omitted fields are left alone. Moving a product to
+        `archived` hides it from the catalogue but never deletes it — order
+        history holds `ON DELETE RESTRICT` references to its variants, so the
+        rows cannot be removed even deliberately. A duplicate slug returns 409.
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          description: Product identifier.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductRequest"
+      responses:
+        "200":
+          description: The updated product.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/variants/{variantId}/stock:
+    patch:
+      operationId: adjustVariantStock
+      tags: [admin]
+      summary: Adjust stock by a signed delta
+      description: >
+        Takes a signed `delta`, never an absolute quantity. Two admins who each
+        read 40 and write an absolute value silently lose one of the changes; two
+        who each send `+10` both land. Applied under a row lock.
+
+        Rejected with 409 when the result would leave
+        `stock_on_hand < stock_reserved`, because that is the database
+        promising goods that are already committed to someone else.
+
+        Returns the variant including `stockOnHand` and `stockReserved`, which
+        only admin responses expose.
+      parameters:
+        - name: variantId
+          in: path
+          required: true
+          description: Variant identifier.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockAdjustmentRequest"
+      responses:
+        "200":
+          description: The variant, with its new stock figures.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVariant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/orders:
+    get:
+      operationId: listAllOrders
+      tags: [admin]
+      summary: Every order
+      description: >
+        Cursor-paginated across all users, newest first, optionally filtered by
+        status and user. Uses the same `Page` envelope and the same cursor codec
+        as the customer-facing list — one pagination mechanism in the whole API.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Restrict to one order status.
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+        - name: userId
+          in: query
+          required: false
+          description: Restrict to one user's orders.
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/orders/{orderNumber}/status:
+    patch:
+      operationId: updateOrderStatus
+      tags: [admin]
+      summary: Advance an order's status
+      description: >
+        Forward-only: `paid` → `fulfilled` → `completed`. Every other
+        transition returns 409, and the `errors` array names the states that
+        *are* reachable from the current one. That lets the admin UI render its
+        buttons from the error response instead of carrying a fourth copy of the
+        state machine.
+
+        Cancellation is not a transition here — it is `POST
+        /orders/{orderNumber}/cancel`, and it is only valid before payment.
+      parameters:
+        - $ref: "#/components/parameters/OrderNumber"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrderStatusRequest"
+      responses:
+        "200":
+          description: The updated order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            That transition is not allowed. `errors` lists the reachable states.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -100,7 +1146,66 @@ components:
       bearerFormat: JWT
       description: Access token from `POST /auth/login`. Valid for 15 minutes.
 
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: >
+        Opaque cursor from a previous response's `nextCursor`. Pass it back
+        verbatim; never construct or parse one. A cursor issued by either
+        backend must work against the other.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+    OrderNumber:
+      name: orderNumber
+      in: path
+      required: true
+      description: Human-facing order number, e.g. `ORD-2026-0000001`.
+      schema:
+        type: string
+        pattern: "^ORD-[0-9]{4}-[0-9]{7}$"
+    CartTokenOptional:
+      name: X-Cart-Token
+      in: header
+      required: false
+      description: >
+        Guest basket token, returned by any cart response. Ignored when a valid
+        access token is present.
+      schema:
+        type: string
+
+  headers:
+    CartToken:
+      description: >
+        The basket's guest token. Always sent; clients should store the latest
+        value, because an expired token is silently replaced with a new one.
+      schema:
+        type: string
+    IdempotencyReplayed:
+      description: >
+        Present and `true` when this response was replayed from a previous
+        request with the same `Idempotency-Key` rather than newly computed.
+      schema:
+        type: boolean
+    CacheControl:
+      description: Caching directives for a response that changes rarely.
+      schema:
+        type: string
+        examples: ["public, max-age=300"]
+
   schemas:
+    # --- shared ----------------------------------------------------------
     Implementation:
       type: string
       description: Which backend implementation served the request.
@@ -136,7 +1241,9 @@ components:
           $ref: "#/components/schemas/Implementation"
         checks:
           type: object
-          description: Per-dependency verdicts. Only `database` gates readiness.
+          description: >
+            Per-dependency verdicts. Only `database` gates readiness; `cache`
+            is reported for visibility.
           required: [database, cache]
           properties:
             database:
@@ -165,15 +1272,29 @@ components:
 
     FieldError:
       type: object
-      description: One field-level problem, used by validation and stock errors.
+      description: >
+        One field-level problem. `field`/`message` are always present; the stock
+        fields appear only on an insufficient-stock 409, where the client needs
+        to know how short each line was in order to fix the basket in one pass.
       required: [field, message]
       properties:
         field:
           type: string
-          description: Path to the offending field, e.g. `items[0].quantity`.
+          description: Path to the offending field.
+          examples: ["items[0].quantity"]
         message:
           type: string
           description: Human-readable explanation of what is wrong with this field.
+        variantId:
+          type: string
+          format: uuid
+          description: The variant this line refers to. Insufficient-stock errors only.
+        requested:
+          type: integer
+          description: Quantity the request asked for. Insufficient-stock errors only.
+        available:
+          type: integer
+          description: Quantity actually available. Insufficient-stock errors only.
 
     Problem:
       type: object
@@ -181,6 +1302,7 @@ components:
         RFC 9457 problem details, and the only error shape this API emits.
         `traceId` is always present and always matches the request's log lines.
         `errors` carries field-level detail when the failure is per-field.
+        A stack trace never appears in any field.
       required: [type, title, status]
       properties:
         type:
@@ -212,13 +1334,892 @@ components:
           items:
             $ref: "#/components/schemas/FieldError"
 
+    # --- auth ------------------------------------------------------------
+    UserRole:
+      type: string
+      description: What the account is allowed to do.
+      enum: [customer, admin]
+
+    User:
+      type: object
+      description: A user account, as the owner of it sees it.
+      required: [id, email, fullName, role, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Account identifier.
+        email:
+          type: string
+          format: email
+          description: Login address. Unique, compared case-insensitively.
+        fullName:
+          type: string
+          description: Display name.
+        role:
+          $ref: "#/components/schemas/UserRole"
+        createdAt:
+          type: string
+          format: date-time
+          description: When the account was created.
+
+    RegisterRequest:
+      type: object
+      description: New account details.
+      required: [email, password, fullName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: Must not already be registered.
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          description: >
+            Hashed with argon2id (19456 KiB, 2 iterations, parallelism 1) and
+            never stored or logged in any other form.
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Display name.
+
+    LoginRequest:
+      type: object
+      description: Credentials.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Login address.
+        password:
+          type: string
+          description: Plaintext password, over TLS only.
+
+    RefreshRequest:
+      type: object
+      description: A refresh token being presented for rotation or revocation.
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          description: The token issued by the most recent login or refresh.
+
+    TokenPair:
+      type: object
+      description: >
+        An access/refresh pair. Only the SHA-256 hash of the refresh token is
+        stored, so a database leak does not yield usable tokens.
+      required: [accessToken, refreshToken, tokenType, expiresIn]
+      properties:
+        accessToken:
+          type: string
+          description: JWT for the `Authorization` header.
+        refreshToken:
+          type: string
+          description: Single-use token for `POST /auth/refresh`.
+        tokenType:
+          type: string
+          description: Always `Bearer`.
+          examples: ["Bearer"]
+        expiresIn:
+          type: integer
+          description: >
+            Access token lifetime in **seconds** — not milliseconds, and not an
+            absolute timestamp. Both implementations must send the same unit.
+          examples: [900]
+
+    AuthSession:
+      type: object
+      description: The result of registering or signing in.
+      required: [user, tokens]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        tokens:
+          $ref: "#/components/schemas/TokenPair"
+
+    # --- catalog ---------------------------------------------------------
+    Category:
+      type: object
+      description: >
+        One node of the category tree. `children` is omitted on a leaf rather
+        than sent as an empty array.
+      required: [id, slug, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Category identifier.
+        slug:
+          type: string
+          description: URL-safe identifier, used by the `categorySlug` filter.
+          examples: ["t-shirts"]
+        name:
+          type: string
+          description: Display name.
+        productCount:
+          type: integer
+          description: Active products filed directly under this category.
+        children:
+          type: array
+          description: Child categories. Omitted when there are none.
+          items:
+            $ref: "#/components/schemas/Category"
+
+    CategoryPage:
+      description: >
+        The category tree in the standard list envelope. `items` holds the roots
+        and `hasMore` is always `false` — the whole tree is returned at once.
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              description: Root categories, each with its descendants nested.
+              items:
+                $ref: "#/components/schemas/Category"
+
+    ProductStatus:
+      type: string
+      description: >
+        Publication state. Only `active` products appear in the catalogue;
+        `archived` hides a product without deleting it, so order history stays
+        intact.
+      enum: [draft, active, archived]
+
+    ProductSort:
+      type: string
+      description: >
+        Ordering for `GET /products`. The price sorts read the denormalised
+        `min_price_cents` column, and every option carries `id` as a tiebreaker.
+      enum: [newest, price_asc, price_desc, name_asc]
+
+    ProductImage:
+      type: object
+      description: One product image.
+      required: [id, url, position]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Image identifier.
+        url:
+          type: string
+          format: uri
+          description: Absolute image URL.
+        alt:
+          type: string
+          description: Alternative text. Omitted when none was supplied.
+        position:
+          type: integer
+          description: Display order, ascending.
+
+    ProductVariant:
+      type: object
+      description: >
+        One buyable variation of a product. `availableStock` is computed at read
+        time and is advisory only — checkout re-verifies under a row lock.
+      required: [id, sku, name, priceCents, currency, availableStock]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Variant identifier. Also the lock ordering key at checkout.
+        sku:
+          type: string
+          description: Stock-keeping unit. Unique across the catalogue.
+        name:
+          type: string
+          description: What distinguishes this variant, e.g. `Navy / L`.
+        priceCents:
+          type: integer
+          description: Price in minor units. Integer, never a decimal.
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 code. Always `THB` in this deployment.
+          examples: ["THB"]
+        availableStock:
+          type: integer
+          description: >
+            `stock_on_hand - stock_reserved` at read time. Display only — never
+            make a sell/no-sell decision from this value.
+          minimum: 0
+
+    AdminVariant:
+      description: >
+        A variant with the raw stock columns exposed. Admin responses only;
+        customers see `availableStock` alone.
+      allOf:
+        - $ref: "#/components/schemas/ProductVariant"
+        - type: object
+          required: [stockOnHand, stockReserved]
+          properties:
+            stockOnHand:
+              type: integer
+              description: Physical units held.
+              minimum: 0
+            stockReserved:
+              type: integer
+              description: >
+                Units promised to in-flight orders. The schema enforces
+                `stockReserved <= stockOnHand`.
+              minimum: 0
+
+    ProductSummary:
+      type: object
+      description: A product as it appears in a list. No variants, no images beyond one.
+      required: [id, slug, name, minPriceCents, currency, inStock]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Product identifier.
+        slug:
+          type: string
+          description: URL-safe identifier, used by `GET /products/{slug}`.
+        name:
+          type: string
+          description: Display name.
+        minPriceCents:
+          type: integer
+          description: >
+            Cheapest active variant's price, read from the denormalised column
+            that `sort=price_asc` orders by.
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 code.
+          examples: ["THB"]
+        inStock:
+          type: boolean
+          description: Whether any variant currently has available stock. Advisory.
+        imageUrl:
+          type: string
+          format: uri
+          description: Primary image. Omitted when the product has no images.
+        categorySlug:
+          type: string
+          description: The category this product is filed under.
+
+    ProductDetail:
+      description: >
+        Everything needed to render a product page: the summary fields plus all
+        active variants and all images.
+      allOf:
+        - $ref: "#/components/schemas/ProductSummary"
+        - type: object
+          required: [description, status, variants, images, createdAt]
+          properties:
+            description:
+              type: string
+              description: Long-form product copy.
+            status:
+              $ref: "#/components/schemas/ProductStatus"
+            variants:
+              type: array
+              description: Active variants, cheapest first.
+              items:
+                $ref: "#/components/schemas/ProductVariant"
+            images:
+              type: array
+              description: Images in display order.
+              items:
+                $ref: "#/components/schemas/ProductImage"
+            createdAt:
+              type: string
+              format: date-time
+              description: When the product was created.
+
+    ProductPage:
+      description: A page of products.
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              description: Products in the requested order.
+              items:
+                $ref: "#/components/schemas/ProductSummary"
+
+    # --- cart ------------------------------------------------------------
+    CartItem:
+      type: object
+      description: >
+        One basket line. Prices here are live — recomputed from the variant on
+        every read — which is the opposite of an order line.
+      required:
+        [id, variantId, productId, slug, productName, variantName, sku,
+         unitPriceCents, quantity, lineTotalCents, currency, availableStock]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Line identifier, used by the item endpoints.
+        variantId:
+          type: string
+          format: uuid
+          description: The variant in the basket.
+        productId:
+          type: string
+          format: uuid
+          description: The variant's product.
+        slug:
+          type: string
+          description: Product slug, so the client can link without another read.
+        productName:
+          type: string
+          description: Product name at read time.
+        variantName:
+          type: string
+          description: Variant name at read time.
+        sku:
+          type: string
+          description: Variant SKU.
+        imageUrl:
+          type: string
+          format: uri
+          description: Primary product image. Omitted when there is none.
+        unitPriceCents:
+          type: integer
+          description: Current variant price. Changes if the product is repriced.
+          minimum: 0
+        quantity:
+          type: integer
+          description: Units of this variant.
+          minimum: 1
+          maximum: 99
+        lineTotalCents:
+          type: integer
+          description: "`unitPriceCents × quantity`, recomputed on every read."
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 code.
+          examples: ["THB"]
+        availableStock:
+          type: integer
+          description: Advisory stock figure for this variant.
+          minimum: 0
+
+    Cart:
+      type: object
+      description: >
+        The basket. Carries a subtotal but no shipping or grand total — those
+        are computed at checkout, so the basket never implies a final price.
+      required: [id, items, itemCount, subtotalCents, currency, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Basket identifier.
+        items:
+          type: array
+          description: Lines, most recently added first.
+          items:
+            $ref: "#/components/schemas/CartItem"
+        itemCount:
+          type: integer
+          description: Sum of all line quantities.
+          minimum: 0
+        subtotalCents:
+          type: integer
+          description: Sum of every line total, at current prices.
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 code.
+          examples: ["THB"]
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the basket last changed.
+        expiresAt:
+          type: string
+          format: date-time
+          description: >
+            When a guest basket is swept. Omitted for a signed-in user's basket,
+            which does not expire.
+
+    AddCartItemRequest:
+      type: object
+      description: A variant and how many of it to add.
+      required: [variantId, quantity]
+      properties:
+        variantId:
+          type: string
+          format: uuid
+          description: The variant to add.
+        quantity:
+          type: integer
+          description: >
+            Units to add. Added to any existing quantity for this variant, then
+            capped at 99.
+          minimum: 1
+          maximum: 99
+
+    UpdateCartItemRequest:
+      type: object
+      description: A new absolute quantity for a line.
+      required: [quantity]
+      properties:
+        quantity:
+          type: integer
+          description: >
+            Replaces the line's quantity. Use `DELETE` to remove a line; zero is
+            not accepted here.
+          minimum: 1
+          maximum: 99
+
+    MergeCartRequest:
+      type: object
+      description: The guest basket to absorb.
+      required: [cartToken]
+      properties:
+        cartToken:
+          type: string
+          description: >
+            The `X-Cart-Token` the browser held before signing in. An unknown or
+            already-merged value is not an error.
+
+    # --- checkout and orders ---------------------------------------------
+    Address:
+      type: object
+      description: >
+        A delivery address. Stored on the order as a JSONB snapshot of where
+        this order was sent, not as a reference to the user's current address.
+      required: [recipientName, phone, line1, city, province, postalCode, country]
+      properties:
+        recipientName:
+          type: string
+          maxLength: 120
+          description: Who is receiving the parcel.
+        phone:
+          type: string
+          maxLength: 32
+          description: Contact number for the courier.
+        line1:
+          type: string
+          maxLength: 200
+          description: Street address.
+        line2:
+          type: string
+          maxLength: 200
+          description: Apartment, floor, or district. Omitted when not supplied.
+        city:
+          type: string
+          maxLength: 100
+          description: City or district.
+        province:
+          type: string
+          maxLength: 100
+          description: Province.
+        postalCode:
+          type: string
+          pattern: "^[0-9]{5}$"
+          description: Five-digit Thai postal code.
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+          description: ISO 3166-1 alpha-2 code. Always `TH` in this deployment.
+          examples: ["TH"]
+
+    PaymentMethod:
+      type: string
+      description: >
+        How the order is paid. Both values are handled by the mock provider in
+        this deployment.
+      enum: [card, promptpay]
+
+    CheckoutRequest:
+      type: object
+      description: >
+        Everything needed to turn the caller's basket into an order. The basket
+        itself is not named — the caller has exactly one.
+      required: [shippingAddress, paymentMethod]
+      properties:
+        shippingAddress:
+          $ref: "#/components/schemas/Address"
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        note:
+          type: string
+          maxLength: 500
+          description: Optional message for the shop.
+
+    OrderStatus:
+      type: string
+      description: >
+        Where an order stands. `pending_payment` on creation; `paid` when the
+        webhook lands; then forward-only through `fulfilled` and `completed`.
+        `expired` is set by the reservation sweeper when payment never arrived.
+      enum:
+        - pending_payment
+        - paid
+        - fulfilled
+        - completed
+        - cancelled
+        - expired
+        - payment_failed
+
+    OrderItem:
+      type: object
+      description: >
+        One ordered line, snapshotted at checkout. Every descriptive field is a
+        copy, not a reference, so repricing or archiving a product cannot
+        rewrite what someone was charged.
+      required:
+        [id, variantId, productId, productName, variantName, sku,
+         unitPriceCents, quantity, lineTotalCents]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Order line identifier.
+        variantId:
+          type: string
+          format: uuid
+          description: The variant ordered. Retained for restocking, not for display.
+        productId:
+          type: string
+          format: uuid
+          description: The product ordered.
+        productName:
+          type: string
+          description: Product name as it was when the order was placed.
+        variantName:
+          type: string
+          description: Variant name as it was when the order was placed.
+        sku:
+          type: string
+          description: SKU as it was when the order was placed.
+        imageUrl:
+          type: string
+          format: uri
+          description: Image URL captured at checkout. Omitted when there was none.
+        unitPriceCents:
+          type: integer
+          description: Price charged per unit. Frozen.
+          minimum: 0
+        quantity:
+          type: integer
+          description: Units ordered.
+          minimum: 1
+        lineTotalCents:
+          type: integer
+          description: "`unitPriceCents × quantity` at the time of the order."
+          minimum: 0
+
+    PaymentStatus:
+      type: string
+      description: >
+        `requires_action` on creation, `processing` once confirmed, then
+        `succeeded` or `failed` when the provider calls back.
+      enum: [requires_action, processing, succeeded, failed]
+
+    Payment:
+      type: object
+      description: >
+        The payment attached to an order. Reaching `succeeded` is what
+        decrements stock, and only the webhook can do that.
+      required: [id, status, method, amountCents, currency, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Payment identifier, used by the confirm endpoint.
+        status:
+          $ref: "#/components/schemas/PaymentStatus"
+        method:
+          $ref: "#/components/schemas/PaymentMethod"
+        amountCents:
+          type: integer
+          description: Amount to be charged, matching the order total.
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 code.
+          examples: ["THB"]
+        createdAt:
+          type: string
+          format: date-time
+          description: When the payment was created.
+        failureReason:
+          type: string
+          description: Why the payment failed. Present only on `failed`.
+
+    Order:
+      type: object
+      description: >
+        A placed order. `cancellable` is computed by the server so that clients
+        never carry their own copy of the rule — three implementations of one
+        state machine is three places to fix it.
+      required:
+        [id, orderNumber, status, cancellable, items, shippingAddress,
+         subtotalCents, shippingCents, totalCents, currency, payment, placedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Order identifier.
+        orderNumber:
+          type: string
+          description: Human-facing number, used by every order endpoint.
+          examples: ["ORD-2026-0000001"]
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        cancellable:
+          type: boolean
+          description: >
+            Whether `POST /orders/{orderNumber}/cancel` would succeed right now.
+            Read this rather than comparing statuses client-side.
+        items:
+          type: array
+          description: The ordered lines, frozen at checkout.
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        shippingAddress:
+          $ref: "#/components/schemas/Address"
+        subtotalCents:
+          type: integer
+          description: Sum of the line totals.
+          minimum: 0
+        shippingCents:
+          type: integer
+          description: Flat shipping rate applied to this order.
+          minimum: 0
+        totalCents:
+          type: integer
+          description: "`subtotalCents + shippingCents`. What the payment charges."
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 code.
+          examples: ["THB"]
+        payment:
+          $ref: "#/components/schemas/Payment"
+        note:
+          type: string
+          description: The shopper's message, if one was supplied.
+        placedAt:
+          type: string
+          format: date-time
+          description: When the order was created.
+        paidAt:
+          type: string
+          format: date-time
+          description: When payment succeeded. Omitted until it does.
+        reservationExpiresAt:
+          type: string
+          format: date-time
+          description: >
+            When the stock reservation lapses and the sweeper expires this
+            order. Omitted once the order is no longer `pending_payment`.
+
+    OrderPage:
+      description: A page of orders.
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              description: Orders, newest first.
+              items:
+                $ref: "#/components/schemas/Order"
+
+    ConfirmPaymentRequest:
+      type: object
+      description: >
+        Optional provider details. The mock provider ignores the contents and
+        decides the outcome from the card number, which keeps the demo
+        deterministic.
+      properties:
+        cardNumber:
+          type: string
+          description: >
+            Test card. `4242424242424242` succeeds; `4000000000000002` fails.
+            Never stored.
+        returnUrl:
+          type: string
+          format: uri
+          description: Where a real provider would send the shopper back to.
+
+    # --- webhooks --------------------------------------------------------
+    PaymentWebhookEvent:
+      type: object
+      description: >
+        An inbound provider event. Deduplicated on `(provider, id)`, so
+        redelivery is safe and expected.
+      required: [id, type, createdAt, data]
+      properties:
+        id:
+          type: string
+          description: >
+            Provider's event identifier. The deduplication key — the same id
+            twice must move stock only once.
+        type:
+          type: string
+          description: >
+            Event kind. Deliberately an open string, not an enum: unrecognised
+            types are normal and must be acknowledged with 200, not rejected.
+            Handled values are `payment.succeeded` and `payment.failed`.
+          examples: ["payment.succeeded"]
+        createdAt:
+          type: string
+          format: date-time
+          description: When the provider emitted the event.
+        data:
+          type: object
+          description: Event payload.
+          required: [paymentId]
+          properties:
+            paymentId:
+              type: string
+              format: uuid
+              description: The payment this event concerns.
+            failureReason:
+              type: string
+              description: Why the payment failed. Present on `payment.failed`.
+
+    WebhookAck:
+      type: object
+      description: >
+        Acknowledgement. `applied` distinguishes a processed event from one
+        ignored as a duplicate or unrecognised — useful in tests, and never a
+        reason to return a non-2xx.
+      required: [received, applied]
+      properties:
+        received:
+          type: boolean
+          description: Always `true`.
+        applied:
+          type: boolean
+          description: Whether this delivery changed anything.
+
+    # --- admin -----------------------------------------------------------
+    CreateVariantRequest:
+      type: object
+      description: One variant to create alongside its product.
+      required: [sku, name, priceCents, stockOnHand]
+      properties:
+        sku:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Must be unique across the catalogue.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: What distinguishes this variant.
+        priceCents:
+          type: integer
+          description: Price in minor units.
+          minimum: 0
+        stockOnHand:
+          type: integer
+          description: Opening stock. Reserved stock starts at zero.
+          minimum: 0
+
+    CreateProductRequest:
+      type: object
+      description: >
+        A product and its variants, created together. At least one variant is
+        required — a product with nothing to sell is not a valid state.
+      required: [slug, name, description, categoryId, variants]
+      properties:
+        slug:
+          type: string
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          description: Must be unique. A collision returns 409.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Display name.
+        description:
+          type: string
+          description: Long-form copy.
+        categoryId:
+          type: string
+          format: uuid
+          description: The category to file this under.
+        status:
+          $ref: "#/components/schemas/ProductStatus"
+        variants:
+          type: array
+          description: The variants to create. Sets the product's `min_price_cents`.
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CreateVariantRequest"
+        imageUrls:
+          type: array
+          description: Image URLs in display order.
+          items:
+            type: string
+            format: uri
+
+    UpdateProductRequest:
+      type: object
+      description: >
+        Partial update. Omitted fields are left unchanged; this endpoint does
+        not touch variants, which have their own operations.
+      properties:
+        slug:
+          type: string
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          description: New slug. A collision returns 409.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: New display name.
+        description:
+          type: string
+          description: New long-form copy.
+        categoryId:
+          type: string
+          format: uuid
+          description: Move to a different category.
+        status:
+          $ref: "#/components/schemas/ProductStatus"
+
+    StockAdjustmentRequest:
+      type: object
+      description: >
+        A signed change to a variant's stock. Absolute values are deliberately
+        not accepted: two admins writing absolutes lose one another's work.
+      required: [delta, reason]
+      properties:
+        delta:
+          type: integer
+          description: >
+            Units to add, or a negative number to remove. Rejected with 409 if
+            the result would fall below the variant's reserved stock.
+          examples: [10]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Why the stock changed. Recorded for audit.
+          examples: ["restock"]
+
+    UpdateOrderStatusRequest:
+      type: object
+      description: The next status for an order. Forward-only.
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+
   responses:
-    BadRequest:
-      description: The request was malformed.
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/Problem"
     Unauthorized:
       description: Authentication is missing or invalid.
       content:

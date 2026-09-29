@@ -93,6 +93,30 @@ rules:
       functionOptions:
         notMatch: "^array$"
 
+  # Paired with the rule above, this closes the hole from both ends: a list
+  # cannot be a bare array, and anything named `...Page` has to actually be one
+  # rather than a lookalike with its own pagination fields.
+  page-envelope-on-lists:
+    description: A `...Page` schema must compose the shared Page envelope.
+    message: "{{property}} is named like a page but does not allOf the Page envelope."
+    severity: error
+    resolved: false
+    given: "$.components.schemas[?(@property.match(/.+Page$/))]"
+    then:
+      field: allOf
+      function: truthy
+
+  page-envelope-is-the-real-one:
+    description: A `...Page` schema's first allOf member must be `Page` itself.
+    message: "{{path}} must be `#/components/schemas/Page`."
+    severity: error
+    resolved: false
+    given: "$.components.schemas[?(@property.match(/.+Page$/))].allOf[0].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/schemas/Page$"
+
   # --- enums ----------------------------------------------------------------
 
   # An inline enum cannot be referenced, so the two implementations each grow

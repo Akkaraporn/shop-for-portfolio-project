@@ -16,6 +16,10 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
+hooks: ## Install the git hooks in .githooks (run once per clone)
+	git config core.hooksPath .githooks
+	@echo "hooks installed: contract changes now lint before commit"
+
 # --- run -------------------------------------------------------------------
 
 up-node: ## Bring up the stack on the NestJS backend

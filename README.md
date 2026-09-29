@@ -48,10 +48,20 @@ Run `make` with no arguments for the available commands.
 
 ## Status
 
-Phase 1 in progress — repo scaffolded. The contract is a skeleton: the
-conventions, the `Problem` and `Page` envelopes and the health endpoints are
-settled; the rest of the endpoints are still to be written. No backend or client
-code should exist before `make lint-contract` is clean over a finished contract.
+Phase 1 in progress. The repo is scaffolded and **the contract is closed**: 25
+paths, 26 operations, 46 schemas, clean under `make lint-contract`. Every
+operation carries a description of what it returns and how it fails, so neither
+backend has to guess.
+
+Next: `V1__init.sql` and the seed data (task 1.3), then the NestJS
+implementation. No backend code exists yet.
+
+After cloning, install the hooks once — contract changes then lint before every
+commit:
+
+```bash
+make hooks
+```
 
 See `TASKS.md` for the plan and
 [the board](https://app.clickup.com/90182767626/v/o/s/1100450000000236) for

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Installed by `make hooks` (sets core.hooksPath). Bypass with `git commit -n`
+# only when you already know why.
+#
+# The contract is the source of truth for two backends and the frontend's types.
+# A commit that leaves it failing its own rules makes every downstream artifact
+# suspect, so the gate lives here rather than only in CI.
+set -e
+
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '^contract/'; then
+    echo "pre-commit: contract changed, linting..."
+    make lint-contract
+fi

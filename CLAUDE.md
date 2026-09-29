@@ -42,6 +42,20 @@ Changing `contract/openapi.yaml` after code exists means changing two languages
 plus the tests, so close the contract first (task 1.2) and update the affected
 ClickUp tasks whenever it does change.
 
+## Settled scope decisions
+
+These are answered in the contract and must not be relitigated in code.
+
+- **`sort=price_asc` reads `products.min_price_cents`**, a denormalised copy of
+  the cheapest active variant's price. Never a `MIN()` subquery — it cannot use
+  an index. Both backends maintain the column on every variant reprice, insert,
+  and archive.
+- **Shipping is a flat `SHIPPING_FLAT_CENTS` per order.** No zones, no tables.
+- **One currency, THB.** `currency` is on every money-bearing response; no
+  endpoint takes it as input.
+- **Guests browse and hold a basket; they cannot checkout.** An order belongs to
+  a user, which is what `POST /carts/me/merge` exists for.
+
 ## Cross-implementation rules
 
 Both backends must satisfy every one of these, byte for byte, or the parity
