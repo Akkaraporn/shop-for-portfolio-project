@@ -10,7 +10,7 @@ CONTRACT := contract/openapi.yaml
 
 .DEFAULT_GOAL := help
 .PHONY: help up-node up-java down clean logs ps \
-        lint-contract gen-client gen-prisma test-parity db-dump db-psql
+        lint-contract gen-client gen-prisma test-parity db-dump db-psql db-verify
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -63,6 +63,9 @@ db-dump: ## Dump the live schema (to diff against V1__init.sql)
 	$(COMPOSE) exec -T postgres pg_dump -U $${POSTGRES_USER:-shop} \
 	  --schema-only $${POSTGRES_DB:-shop} > migrations/.schema-dump.sql
 	@echo "wrote migrations/.schema-dump.sql"
+
+db-verify: ## Prove the schema's constraints reject what they claim to reject
+	$(COMPOSE) exec -T postgres psql -v ON_ERROR_STOP=1 -U $${POSTGRES_USER:-shop} -d $${POSTGRES_DB:-shop} -f - < tests/schema/verify-constraints.sql
 
 db-psql: ## Open a psql shell on the dev database
 	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-shop} $${POSTGRES_DB:-shop}

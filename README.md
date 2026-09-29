@@ -53,8 +53,15 @@ paths, 26 operations, 46 schemas, clean under `make lint-contract`. Every
 operation carries a description of what it returns and how it fails, so neither
 backend has to guess.
 
-Next: `V1__init.sql` and the seed data (task 1.3), then the NestJS
-implementation. No backend code exists yet.
+The schema is in too: 15 tables, 36 check constraints, 50 indexes, applied by
+Flyway and seeded with a shop that opens onto real products. `make db-verify`
+proves the constraints reject what they claim to, by trying to break each one.
+
+Demo accounts, all with the password `DemoPass123!`:
+`admin@vibecode.shop` (admin), `somchai@example.com`, `pimchanok@example.com`.
+
+Next: the NestJS implementation (Phase 2). No backend code exists yet, so
+`make up-node` currently brings up Postgres, Redis, Flyway and the gateway only.
 
 After cloning, install the hooks once — contract changes then lint before every
 commit:

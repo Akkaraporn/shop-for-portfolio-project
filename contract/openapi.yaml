@@ -328,8 +328,14 @@ paths:
         top-level category and getting only its directly-filed products is a
         parity failure.
 
-        `q` runs Postgres full-text search over name and description via the
-        existing GIN index. `sort=price_asc` and `price_desc` order by the
+        `q` is a case-insensitive substring match over name and description,
+        backed by a trigram index. Not tokenised full-text search: Thai is
+        written without spaces between words, so a tsvector of
+        `เสื้อเชิ้ตลินินคอปกเปิด` is a single token that `ลินิน` cannot match.
+        Trigrams have no notion of a word, which is why they work here. Both
+        implementations must match substrings identically, mid-word included.
+
+        `sort=price_asc` and `price_desc` order by the
         product's cheapest active variant, read from the denormalised
         `min_price_cents` column — never a `MIN()` subquery, which cannot use an
         index. Every sort carries `id` as a tiebreaker, without which rows with
